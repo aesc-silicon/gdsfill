@@ -1,0 +1,42 @@
+PDK: ihp-sg13g2
+layers:
+  # Activ:
+  #   algorithm: Square
+  #   density: 50
+  #   deviation: 1
+  # GatPoly:
+  #   algorithm: Overlap
+  #   density: 50
+  #   deviation: 1
+  Metal1:
+    algorithm: Square
+    density: 50
+    deviation: 1
+  Metal2:
+    algorithm: [Track, Square]
+    density: 50
+    deviation: 1
+    tile_width: 400
+  Metal3:
+    algorithm: [Track, Square]
+    density: 50
+    deviation: 1
+    tile_width: 400
+  Metal4:
+    algorithm: [Track, Square]
+    density: 50
+    deviation: 1
+    tile_width: 400
+  Metal5:
+    algorithm: [Track, Square]
+    density: 50
+    deviation: 1
+    tile_width: 400
+  TopMetal1:
+    algorithm: Square
+    density: 60
+    deviation: 1
+  TopMetal2:
+    algorithm: Square
+    density: 60
+    deviation: 1

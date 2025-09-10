@@ -1,0 +1,37 @@
+placement_chip:
+  index: 1
+  type: 0
+placement_core:
+  index: 1
+  type: 1
+tile_border:
+  index: 1
+  type: 2
+nofill_area:
+  index: 1
+  type: 3
+drawing:
+  index: 2
+  type: 0
+filler:
+  index: 2
+  type: 1
+keep_out:
+  index: 2
+  type: 2
+# Layers to generate keep out area
+keep_away_0:
+  index: 3
+  type: 0
+keep_away_1:
+  index: 3
+  type: 0
+keep_away_2:
+  index: 3
+  type: 0
+keep_away_3:
+  index: 3
+  type: 0
+keep_away_4:
+  index: 3
+  type: 0
