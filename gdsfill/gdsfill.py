@@ -31,8 +31,8 @@ from gdsfill.library.common import (
 from gdsfill.library.fill import fill_layer
 
 
-# pylint: disable=too-many-locals
-def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run):
+# pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
+def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run, core_size=None):
     """
     Run the fill pipeline for a single layer.
 
@@ -58,7 +58,7 @@ def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run):
     for stage in ('raw', 'modified', 'filled'):
         (output_path / stage).mkdir(parents=True, exist_ok=True)
 
-    export_layer(pdk, inputfile, output_path, layer)
+    export_layer(pdk, inputfile, output_path, layer, core_size)
     tiles = open_yaml(output_path / "tiles.yaml")
 
     prepare_module = importlib.import_module(f'gdsfill.{pdk.get_name()}.prepare')
@@ -102,11 +102,11 @@ def func_fill(args, pdk):
         tmpdirname = Path.cwd() / "gdsfill-tmp"
         print(f"Data are stored in {tmpdirname}")
         for layer, _ in pdk.get_layers():
-            _fill_layer(layer, pdk, args.input, tmpdirname, args.dry_run)
+            _fill_layer(layer, pdk, args.input, tmpdirname, args.dry_run, args.core_size)
     else:
         with tempfile.TemporaryDirectory(prefix='gdsfill-') as tmpdirname:
             for layer, _ in pdk.get_layers():
-                _fill_layer(layer, pdk, args.input, tmpdirname, args.dry_run)
+                _fill_layer(layer, pdk, args.input, tmpdirname, args.dry_run, args.core_size)
 
 
 def func_density(args, pdk):
@@ -171,6 +171,8 @@ def arguments():
     fill.add_argument('--keep-data', action=argparse.BooleanOptionalAction)
     fill.add_argument('--dry-run', action=argparse.BooleanOptionalAction)
     fill.add_argument('--config-file', type=is_valid_file)
+    fill.add_argument('--core-size', type=float, nargs=4, metavar=('llx', 'lly', 'urx', 'ury'),
+                      help="lower left (x, y) and upper right (x, y) points of the chip core.")
     fill.set_defaults(func=func_fill)
 
     erase = subparsers.add_parser('erase', help='Erase dummy metal from chip')

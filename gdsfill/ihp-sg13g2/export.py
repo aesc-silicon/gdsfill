@@ -31,6 +31,11 @@ except NameError:
     sys.exit(1)
 tile_width = int(tile_width)  # noqa: F821  # pylint: disable=undefined-variable
 
+try:
+    core_size = list(map(float, core_size.split(',')))  # pylint: disable=used-before-assignment
+except NameError:
+    core_size = []
+
 
 # Load constants
 script = Path(__file__).parent.resolve()
@@ -94,26 +99,6 @@ def get_die_size(layout, cell) -> tuple[int, int]:
     return (int(edgeseal.bbox().width() / DB2NM), int(edgeseal.bbox().height() / DB2NM))
 
 
-def get_core_size(layout, cell) -> tuple[int, int]:
-    """
-    Return core width and height in microns.
-    """
-    layer = layout.layer(189, 4)
-    cell_br = pya.Region(cell.begin_shapes_rec(layer)).merge()
-    cell_br = (cell_br + cell_br.holes()).merge()
-    return (int(cell_br.bbox().width() / DB2NM), int(cell_br.bbox().height() / DB2NM))
-
-
-def get_core_origin(layout, cell) -> tuple[float, float]:
-    """
-    Return the origin (x, y) of the core bounding box in microns.
-    """
-    layer = layout.layer(189, 4)
-    cell_br = pya.Region(cell.begin_shapes_rec(layer)).merge()
-    cell_br = (cell_br + cell_br.holes()).merge()
-    return (float(cell_br.bbox().p1.x / DB2NM), float(cell_br.bbox().p1.y / DB2NM))
-
-
 def generate_border(x: int, y: int, tile_width_: int, space: float):
     """
     Generate border boxes around a tile.
@@ -143,7 +128,7 @@ def get_metal_border(x: int, y: int, tile_width_: int):
     return generate_border(x, y, tile_width_, 0.42)
 
 
-def get_metal(layout, design_cell, tmp_cell, layer_number: int) -> None:
+def get_metal(layout, design_cell, tmp_cell, layer_number: int, core_points) -> None:
     """
     Collect polygons for metal layers and insert them into the temporary cell.
     """
@@ -152,8 +137,9 @@ def get_metal(layout, design_cell, tmp_cell, layer_number: int) -> None:
     trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
 
-    cell_br = pya.Region(design_cell.begin_shapes_rec(layout.layer(189, 4)))
-    tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(cell_br.merged())
+    if core_points:
+        placement_cell = pya.Box(*(c * DB2NM for c in core_points))
+        tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(placement_cell)
 
     nofill = get_nofill(layout, design_cell, layer_number)
     tmp_cell.shapes(layout.layer(*get_layer("nofill_area"))).insert(nofill)
@@ -164,7 +150,7 @@ def get_topmetal_border(x: int, y: int, tile_width_: int):
     return generate_border(x, y, tile_width_, 3.0)
 
 
-def get_topmetal(layout, design_cell, tmp_cell, layer_number: int) -> None:
+def get_topmetal(layout, design_cell, tmp_cell, layer_number: int, core_points) -> None:
     """
     Collect polygons for top-metal layers and insert them into the temporary cell.
     """
@@ -173,8 +159,9 @@ def get_topmetal(layout, design_cell, tmp_cell, layer_number: int) -> None:
     trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
 
-    cell_br = pya.Region(design_cell.begin_shapes_rec(layout.layer(189, 4)))
-    tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(cell_br.merged())
+    if core_points:
+        placement_cell = pya.Box(*(c * DB2NM for c in core_points))
+        tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(placement_cell)
 
     nofill = get_nofill(layout, design_cell, layer_number)
     tmp_cell.shapes(layout.layer(*get_layer("nofill_area"))).insert(nofill)
@@ -202,7 +189,7 @@ FUNC_BORDER_MAPPING = {
 
 
 # pylint: disable=too-many-locals
-def export_tiles(output_dir: Path, layer_name: str, tile_width_: int):
+def export_tiles(output_dir: Path, layer_name: str, tile_width_: int, core_points):
     """
     Generate tiled GDSII files and metadata for a specified metal or top-metal layer.
 
@@ -235,14 +222,12 @@ def export_tiles(output_dir: Path, layer_name: str, tile_width_: int):
     tmp_cell = layout.create_cell(tmp_filler_top_name)
 
     layer_index = constants["layers"][layer_name]["index"]
-    FUNC_MAPPING[layer_name](layout, design_cell, tmp_cell, layer_index)
+    FUNC_MAPPING[layer_name](layout, design_cell, tmp_cell, layer_index, core_points)
 
     sealring = get_fill_area(layout, design_cell)
     tmp_cell.shapes(layout.layer(*get_layer("placement_chip"))).insert(sealring)
 
     die_width, die_height = get_die_size(layout, design_cell)
-    core_width, core_height = get_core_size(layout, design_cell)
-    core_x, core_y = get_core_origin(layout, design_cell)
 
     # Compute checksum
     with open(pya.CellView.active().filename(), "rb") as gds:
@@ -252,10 +237,17 @@ def export_tiles(output_dir: Path, layer_name: str, tile_width_: int):
 
     data = {
         "die": {"width": die_width, "height": die_height},
-        "core": {"width": core_width, "height": core_height, "x": core_x, "y": core_y},
         "tiles": {},
         "checksum": file_hash.hexdigest(),
     }
+
+    if core_points:
+        data['core'] = {
+            "width": round(core_points[2] - core_points[0], 2),
+            "height": round(core_points[3] - core_points[1], 2),
+            "x": round(core_points[0], 2),
+            "y": round(core_points[1], 2)
+        }
 
     for x in range(0, die_width, tile_width_):
         for y in range(0, die_height, tile_width_):
@@ -286,7 +278,7 @@ def export_tiles(output_dir: Path, layer_name: str, tile_width_: int):
 
 # pylint: disable=undefined-variable
 outputdir = Path(output_path)  # noqa: F821
-tile_data = export_tiles(outputdir, layer_name, tile_width)  # noqa: F821
+tile_data = export_tiles(outputdir, layer_name, tile_width, core_size)  # noqa: F821
 
 # Write metadata YAML
 try:

@@ -56,6 +56,10 @@ def fill_track(pdk, layer: str, tiles, tile, annotated_cell):
     min_fill = pdk.get_layer_density(layer) - pdk.get_layer_deviation(layer)
     cell_height = fill_rules['cell_height']
 
+    if 'core' not in tiles:
+        raise KeyError("Track filler algorithm requires information about the core."
+                       "Please define --core-size llx lly urx ury")
+
     if tiles['core']['x'] < tile.x:
         tracks = math.ceil((tile.x - tiles['core']['x']) / cell_height)
         offset_x = round(abs((tiles['core']['x'] + (tracks * cell_height)) - tile.x), 3)
