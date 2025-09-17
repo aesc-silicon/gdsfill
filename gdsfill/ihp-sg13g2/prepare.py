@@ -31,6 +31,116 @@ def get_layer(layer):
     return {'layer': layers[layer]['index'], 'datatype': layers[layer]['type']}
 
 
+def prepare_activ(top_cell):
+    """
+    Prepare blocking geometries for the activ layer.
+
+    Steps:
+        - Collect polygons for no-fill, tile border, filler, drawing,
+          and keep-away areas.
+        - Expand filler and drawing polygons by a fixed margin.
+        - Combine with keep-away polygons to form exclusion regions.
+        - Add the resulting blocking polygons to the top cell.
+
+    Args:
+        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+    """
+    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
+    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
+    drawing = top_cell.get_polygons(**get_layer('drawing'))
+    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))  # TRANS
+    keep_away1 = top_cell.get_polygons(**get_layer('keep_away_1'))  # GatPoly
+    keep_away2 = top_cell.get_polygons(**get_layer('keep_away_2'))  # Cont
+    keep_away3 = top_cell.get_polygons(**get_layer('keep_away_3'))  # NWell
+    keep_away4 = top_cell.get_polygons(**get_layer('keep_away_4'))  # nBuLay
+    keep_away5 = top_cell.get_polygons(**get_layer('keep_away_5'))  # PWell:block
+
+    AFil_c_gp = gdstk.offset(keep_away1, 1.1, **get_layer('keep_out'))
+    AFil_c_cont = gdstk.offset(keep_away2, 1.1, **get_layer('keep_out'))
+    AFil_c = gdstk.boolean(AFil_c_gp, AFil_c_cont, operation='or', **get_layer('keep_out'))
+
+    AFil_c1 = gdstk.offset(drawing, 0.42, **get_layer('keep_out'))
+
+    AFil_d_a_out = gdstk.offset(keep_away3, 1.0, **get_layer('keep_out'))
+    AFil_d_a_in = gdstk.offset(keep_away3, -1.0, **get_layer('keep_out'))
+    AFil_d_a = gdstk.boolean(AFil_d_a_out, AFil_d_a_in, operation='not', **get_layer('keep_out'))
+
+    AFil_d_b_out = gdstk.offset(keep_away4, 1.0, **get_layer('keep_out'))
+    AFil_d_b_in = gdstk.offset(keep_away4, -1.0, **get_layer('keep_out'))
+    AFil_d_b = gdstk.boolean(AFil_d_b_out, AFil_d_b_in, operation='not', **get_layer('keep_out'))
+    AFil_d = gdstk.boolean(AFil_d_a, AFil_d_b, operation='or', **get_layer('keep_out'))
+
+    AFil_e = gdstk.offset(keep_away0, 1.0, **get_layer('keep_out'))
+
+    AFil_i_out = gdstk.offset(keep_away5, 1.5, **get_layer('keep_out'))
+    AFil_i_in = gdstk.offset(keep_away5, -1.5, **get_layer('keep_out'))
+    AFil_i = gdstk.boolean(AFil_i_out, AFil_i_in, operation='not', **get_layer('keep_out'))
+
+    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
+    blocking_b = gdstk.boolean(AFil_c, AFil_c1, operation='or', **get_layer('keep_out'))
+    blocking_c = gdstk.boolean(AFil_d, AFil_e, operation='or', **get_layer('keep_out'))
+    blocking0 = gdstk.boolean(blocking_a, blocking_b, operation='or', **get_layer('keep_out'))
+    blocking1 = gdstk.boolean(blocking_c, AFil_i, operation='or', **get_layer('keep_out'))
+    blocking = gdstk.boolean(blocking0, blocking1, operation='or', **get_layer('keep_out'))
+    top_cell.add(*(poly for poly in blocking))
+
+
+def prepare_gatpoly(top_cell):
+    """
+    Prepare blocking geometries for the gatpoly layer.
+
+    Steps:
+        - Collect polygons for no-fill, tile border, filler, drawing,
+          and keep-away areas.
+        - Expand filler and drawing polygons by a fixed margin.
+        - Combine with keep-away polygons to form exclusion regions.
+        - Add the resulting blocking polygons to the top cell.
+
+    Args:
+        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+    """
+    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
+    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
+    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))  # TRANS
+    keep_away1 = top_cell.get_polygons(**get_layer('keep_away_1'))  # GatPoly
+    keep_away2 = top_cell.get_polygons(**get_layer('keep_away_2'))  # Cont
+    keep_away3 = top_cell.get_polygons(**get_layer('keep_away_3'))  # NWell
+    keep_away4 = top_cell.get_polygons(**get_layer('keep_away_4'))  # nBuLay
+    keep_away5 = top_cell.get_polygons(**get_layer('keep_away_5'))  # Activ
+    keep_away6 = top_cell.get_polygons(**get_layer('keep_away_6'))  # pSD
+    keep_away7 = top_cell.get_polygons(**get_layer('keep_away_7'))  # nSD:block
+    keep_away8 = top_cell.get_polygons(**get_layer('keep_away_8'))  # SalBlock
+
+    GFil_d_gp = gdstk.offset(keep_away1, 1.1, **get_layer('keep_out'))
+    GFil_d_cont = gdstk.offset(keep_away2, 1.1, **get_layer('keep_out'))
+    GFil_d_activ = gdstk.offset(keep_away5, 1.1, **get_layer('keep_out'))
+    GFil_d_psd = gdstk.offset(keep_away6, 1.1, **get_layer('keep_out'))
+    GFil_d_nsd_block = gdstk.offset(keep_away7, 1.1, **get_layer('keep_out'))
+    GFil_d_salblock = gdstk.offset(keep_away8, 1.1, **get_layer('keep_out'))
+    GFil_d_a = gdstk.boolean(GFil_d_gp, GFil_d_cont, operation='or', **get_layer('keep_out'))
+    GFil_d_b = gdstk.boolean(GFil_d_activ, GFil_d_psd, operation='or', **get_layer('keep_out'))
+    GFil_d_c = gdstk.boolean(GFil_d_nsd_block, GFil_d_salblock, operation='or',
+                             **get_layer('keep_out'))
+    GFil_d_0 = gdstk.boolean(GFil_d_a, GFil_d_b, operation='or', **get_layer('keep_out'))
+    GFil_d = gdstk.boolean(GFil_d_0, GFil_d_c, operation='or', **get_layer('keep_out'))
+
+    GFil_e1_out = gdstk.offset(keep_away3, 1.1, **get_layer('keep_out'))
+    GFil_e1_in = gdstk.offset(keep_away3, -1.1, **get_layer('keep_out'))
+    GFil_e1 = gdstk.boolean(GFil_e1_out, GFil_e1_in, operation='not', **get_layer('keep_out'))
+    GFil_e2_out = gdstk.offset(keep_away4, 1.1, **get_layer('keep_out'))
+    GFil_e2_in = gdstk.offset(keep_away4, -1.1, **get_layer('keep_out'))
+    GFil_e2 = gdstk.boolean(GFil_e2_out, GFil_e2_in, operation='not', **get_layer('keep_out'))
+    GFil_e = gdstk.boolean(GFil_e1, GFil_e2, operation='or', **get_layer('keep_out'))
+
+    GFil_f = gdstk.offset(keep_away0, 1.1, **get_layer('keep_out'))
+
+    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
+    blocking_b = gdstk.boolean(GFil_d, GFil_e, operation='or', **get_layer('keep_out'))
+    blocking0 = gdstk.boolean(blocking_a, blocking_b, operation='or', **get_layer('keep_out'))
+    blocking = gdstk.boolean(GFil_f, blocking0, operation='or', **get_layer('keep_out'))
+    top_cell.add(*(poly for poly in blocking))
+
+
 def prepare_metal(top_cell):
     """
     Prepare blocking geometries for standard metal layers.
@@ -102,6 +212,8 @@ def prepare_topmetal(top_cell):
 
 
 FUNC_MAPPING = {
+  'Activ': prepare_activ,
+  'GatPoly': prepare_gatpoly,
   'Metal1': prepare_metal,
   'Metal2': prepare_metal,
   'Metal3': prepare_metal,

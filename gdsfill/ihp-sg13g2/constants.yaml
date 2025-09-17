@@ -9,14 +9,19 @@ layers:
     max_depth: 10
     Square:
       min_width: 1.0
-      max_width: 4.84
-      min_space: 0.42
+      # Allow min. GatPoly:filler extension over Activ:filler (0.18um)
+      max_width: 4.64
+      # Prevent GFil.c with enough space between two squares
+      min_space: 1.5
       max_space: 10.0
+      clipping: false
   GatPoly:
     index: 5
     drawing: 0
     fill: 22
-    Overlay:
+    max_depth: 10
+    Overlap:
+      min_width: 0.7
       max_width: 5.0
       min_extension: 0.18
       min_space: 0.8
