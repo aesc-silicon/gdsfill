@@ -19,19 +19,34 @@ filler:
 keep_out:
   index: 2
   type: 2
+reference:
+  index: 2
+  type: 3
 # Layers to generate keep out area
 keep_away_0:
   index: 3
   type: 0
 keep_away_1:
   index: 3
-  type: 0
+  type: 1
 keep_away_2:
   index: 3
-  type: 0
+  type: 2
 keep_away_3:
   index: 3
-  type: 0
+  type: 3
 keep_away_4:
   index: 3
-  type: 0
+  type: 4
+keep_away_5:
+  index: 3
+  type: 5
+keep_away_6:
+  index: 3
+  type: 6
+keep_away_7:
+  index: 3
+  type: 7
+keep_away_8:
+  index: 3
+  type: 8
