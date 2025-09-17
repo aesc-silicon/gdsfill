@@ -10,7 +10,7 @@ authors = [
     { name = "Daniel Schultz", email = "dnltz@aesc-silicon.de" }
 ]
 readme = "README"
-license = "LGPL-2.1"
+license = "LGPL-2.1-or-later"
 license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.9"
 classifiers = [
@@ -21,7 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
 ]
 dependencies = [
     "pyyaml",
