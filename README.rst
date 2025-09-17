@@ -10,14 +10,14 @@ This project is still under development. Please report any issues you encounter 
 Installation
 ############
 
-**gdsfill** is not yet available as a Python package.
-Until then, please install it directly from GitHub:
+**gdsfill** can be installed as a Python package. We recommend using a virtual environment to keep dependencies isolated.
 
 .. code-block:: text
 
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install git+https://github.com/aesc-silicon/gdsfill.git
+   $ python3 -m venv venv
+   $ source venv/bin/activate
+   (venv) $ pip install --updage pip
+   (venv) $ pip install gdsfill
 
 Density
 #######
@@ -41,21 +41,58 @@ If a layout already contains dummy fill, or if previous fills should be removed,
 Fill
 ####
 
-The following command inserts dummy metal fill into each layer:
+To insert dummy metal fill into all supported layers of a layout, run:
 
 .. code-block:: text
 
    gdsfill fill <my-layout.gds>
 
-By default, **gdsfill** creates a temporary directory for intermediate files.
-Add ``--keep-data`` to store all generated files in a directory named ``gdsfill-tmp``:
+Some algorithms, such as the track filler, require information about the chip core region. You can provide the lower-left and upper-right coordinates as floating-point values:
+
+.. code-block:: text
+
+   gdsfill fill <my-layout.gds> --core-size llx lly urx ury
+
+By default, **gdsfill** creates a temporary directory for intermediate data.
+Use ``--keep-data`` to retain all generated files in a directory called ``gdsfill-tmp``:
 
 .. code-block:: text
 
    gdsfill fill <my-layout.gds> --keep-data
 
-To simulate the process without modifying the layout file, use ``--dry-run``:
+If you only want to simulate the process without modifying the layout file, use ``--dry-run``:
 
 .. code-block:: text
 
    gdsfill fill <my-layout.gds> --dry-run
+
+
+Custom Configuration
+####################
+
+By default, **gdsfill** inserts dummy metal fill into each layer using predefined parameters.
+To apply different parameters or restrict fill to specific layers, you can create a custom configuration file.
+
+The following example config inserts fill only into **TopMetal1** and **TopMetal2**:
+
+.. code-block:: yaml
+
+   PDK: ihp-sg13g2
+   layers:
+     TopMetal1:
+       algorithm: Square
+       density: 60
+       deviation: 1
+     TopMetal2:
+       algorithm: Square
+       density: 60
+       deviation: 1
+
+.. note::
+   Example config files are available in ``gdsfill/configs``.
+
+To use a custom config file, pass it with ``--config-file``:
+
+.. code-block:: text
+
+   gdsfill fill <my-layout.gds> --config-file <my-config-file.yaml>
