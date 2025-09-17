@@ -23,13 +23,13 @@ class PdkInformation:
     """
     Accessor for PDK configuration and constants.
 
-    Loads a process-specific configuration (`config.yaml`) and
+    Loads a process-specific configuration (`configs/`) and
     constants (`constants.yaml`) from the PDK directory and provides
     convenient methods to query layer settings, algorithms, density
     requirements, and rules for dummy fill.
 
     Attributes:
-        data (dict): Contents of the process `config.yaml`.
+        data (dict): Contents of the process config file.
         constants (dict): Contents of the process `constants.yaml`.
     """
 
@@ -40,10 +40,10 @@ class PdkInformation:
         Args:
             process (str): Name of the process directory (e.g., "ihp-sg13g2").
             config_file (Path or str): Optional path to a custom config file.
-                                       If None, defaults to `<process>/config.yaml`.
+                                       If None, defaults to `configs/<process>.yaml`.
         """
         script = Path(__file__).parent.parent.resolve()
-        self.data = open_yaml(config_file if config_file else script / process / "config.yaml")
+        self.data = open_yaml(config_file if config_file else script / f"configs/{process}.yaml")
         self.constants = open_yaml(script / process / "constants.yaml")
 
     def get_minimum_klayout_version(self):
