@@ -9,7 +9,7 @@ description = "Open-source tool for inserting dummy metal fill into semiconducto
 authors = [
     { name = "Daniel Schultz", email = "dnltz@aesc-silicon.de" }
 ]
-readme = "README"
+readme = "README.rst"
 license = "LGPL-2.1-or-later"
 license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.9"
