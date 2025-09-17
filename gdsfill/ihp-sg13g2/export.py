@@ -123,6 +123,74 @@ def generate_border(x: int, y: int, tile_width_: int, space: float):
     return (box_bottom, box_top, box_left, box_right)
 
 
+def get_activ_border(width, height, tile_width_):
+    """Wrapper to generate border for the activ layer."""
+    return generate_border(width, height, tile_width_, 0.42)
+
+
+# pylint: disable=unused-argument
+def get_activ(layout, design_cell, tmp_cell, layer_number: int, core_points):
+    """
+    Collect polygons for the activ layer and insert them into the temporary cell.
+    """
+    metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(layer_number, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(metal.merged())
+    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
+    gatpoly = pya.Region(design_cell.begin_shapes_rec(layout.layer(5, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_1"))).insert(gatpoly)
+    cont = pya.Region(design_cell.begin_shapes_rec(layout.layer(6, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_2"))).insert(cont)
+    nwell = pya.Region(design_cell.begin_shapes_rec(layout.layer(31, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_3"))).insert(nwell)
+    nbulay = pya.Region(design_cell.begin_shapes_rec(layout.layer(32, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_4"))).insert(nbulay)
+    pwell_block = pya.Region(design_cell.begin_shapes_rec(layout.layer(46, 21)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_5"))).insert(pwell_block)
+
+    nofill = get_nofill(layout, design_cell, layer_number)
+    tmp_cell.shapes(layout.layer(*get_layer("nofill_area"))).insert(nofill)
+
+
+def get_gatpoly_border(width, height, tile_width_):
+    """Wrapper to generate border for the gatpoly layer."""
+    return generate_border(width, height, tile_width_, 0.8)
+
+
+# pylint: disable=unused-argument, too-many-locals
+def get_gatpoly(layout, design_cell, tmp_cell, layer_number: int, core_points):
+    """
+    Collect polygons for the gatpoly layer and insert them into the temporary cell.
+    """
+
+    metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(layer_number, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(metal.merged())
+    activ_filler = pya.Region(design_cell.begin_shapes_rec(layout.layer(1, 22)))
+    tmp_cell.shapes(layout.layer(*get_layer("reference"))).insert(activ_filler)
+    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
+    gatpoly = pya.Region(design_cell.begin_shapes_rec(layout.layer(5, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_1"))).insert(gatpoly)
+    cont = pya.Region(design_cell.begin_shapes_rec(layout.layer(6, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_2"))).insert(cont)
+    nwell = pya.Region(design_cell.begin_shapes_rec(layout.layer(31, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_3"))).insert(nwell)
+    nbulay = pya.Region(design_cell.begin_shapes_rec(layout.layer(32, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_4"))).insert(nbulay)
+
+    activ = pya.Region(design_cell.begin_shapes_rec(layout.layer(1, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_5"))).insert(activ)
+    psd = pya.Region(design_cell.begin_shapes_rec(layout.layer(14, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_6"))).insert(psd)
+    nsd_block = pya.Region(design_cell.begin_shapes_rec(layout.layer(7, 21)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_7"))).insert(nsd_block)
+    salblock = pya.Region(design_cell.begin_shapes_rec(layout.layer(28, 0)))
+    tmp_cell.shapes(layout.layer(*get_layer("keep_away_8"))).insert(salblock)
+
+    nofill = get_nofill(layout, design_cell, layer_number)
+    tmp_cell.shapes(layout.layer(*get_layer("nofill_area"))).insert(nofill)
+
+
 def get_metal_border(x: int, y: int, tile_width_: int):
     """Wrapper to generate border for standard metal layers."""
     return generate_border(x, y, tile_width_, 0.42)
@@ -168,6 +236,8 @@ def get_topmetal(layout, design_cell, tmp_cell, layer_number: int, core_points) 
 
 
 FUNC_MAPPING = {
+    "Activ": get_activ,
+    "GatPoly": get_gatpoly,
     "Metal1": get_metal,
     "Metal2": get_metal,
     "Metal3": get_metal,
@@ -178,6 +248,8 @@ FUNC_MAPPING = {
 }
 
 FUNC_BORDER_MAPPING = {
+    "Activ": get_activ_border,
+    "GatPoly": get_gatpoly_border,
     "Metal1": get_metal_border,
     "Metal2": get_metal_border,
     "Metal3": get_metal_border,

@@ -1,13 +1,15 @@
 PDK: ihp-sg13g2
 layers:
-  # Activ:
-  #   algorithm: Square
-  #   density: 50
-  #   deviation: 1
-  # GatPoly:
-  #   algorithm: Overlap
-  #   density: 50
-  #   deviation: 1
+  Activ:
+    algorithm: Square
+    density: 50
+    deviation: 1
+    tile_width: 400
+  GatPoly:
+    algorithm: Overlap
+    density: 25
+    deviation: 1
+    tile_width: 400
   Metal1:
     algorithm: Square
     density: 50
