@@ -5,14 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gdsfill"
 version = "0.1.0"
-description = "A Python project using pyyaml, packaging, and gdstk."
+description = "Open-source tool for inserting dummy metal fill into semiconductor layouts."
 authors = [
-    { name = "Your Name", email = "you@example.com" }
+    { name = "Daniel Schultz", email = "dnltz@aesc-silicon.de" }
 ]
-readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.8"
-
+readme = "README"
+license = "LGPL-2.1"
+license-files = ["LICEN[CS]E*"]
+requires-python = ">=3.9"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Development Status :: 2 - Pre-Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
+]
 dependencies = [
     "pyyaml",
     "packaging",
@@ -20,8 +30,8 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://example.com"
-repository = "https://github.com/yourusername/my-python-project"
+Homepage = "https://github.com/aesc-silicon/gdsfill"
+Issues = "https://github.com/aesc-silicon/gdsfill/issues"
 
 [project.scripts]
 gdsfill = "gdsfill.gdsfill:main"
