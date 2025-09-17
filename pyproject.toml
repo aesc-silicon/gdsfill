@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gdsfill"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open-source tool for inserting dummy metal fill into semiconductor layouts."
 authors = [
     { name = "Daniel Schultz", email = "dnltz@aesc-silicon.de" }
