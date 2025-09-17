@@ -7,11 +7,13 @@ and applying it to a given tile and layer.
 import gdstk
 
 from gdsfill.library.filler.helper import calculate_density
+from gdsfill.library.filler.overlap import fill_overlap
 from gdsfill.library.filler.square import fill_square
 from gdsfill.library.filler.track import fill_track
 
 
 ALGOS = {
+    'Overlap': fill_overlap,
     'Square': fill_square,
     'Track': fill_track,
 }
