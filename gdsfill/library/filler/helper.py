@@ -31,6 +31,8 @@ def calculate_core_density(top_cell):
     valid_metal = gdstk.boolean(get_polygons(top_cell, 'placement_core'),
                                 get_polygons(top_cell, 'drawing'), operation='and')
     total_metal_area = sum(polygon.area() for polygon in valid_metal)
+    if total_metal_area == 0:
+        return 0
     return round((total_metal_area / total_area) * 100, 2)
 
 
@@ -51,6 +53,8 @@ def calculate_core_fill_density(top_cell, cell):
     valid_fill = gdstk.boolean(get_polygons(top_cell, 'placement_core'),
                                cell.get_polygons(), operation='and')
     total_fill_area = sum(polygon.area() for polygon in valid_fill)
+    if total_fill_area == 0:
+        return 0
     return round((total_fill_area / total_area) * 100, 2)
 
 
@@ -68,6 +72,8 @@ def calculate_density(top_cell):
     if total_area == 0:
         return 0
     total_metal_area = sum(polygon.area() for polygon in get_polygons(top_cell, 'drawing'))
+    if total_metal_area == 0:
+        return 0
     return round((total_metal_area / total_area) * 100, 2)
 
 
@@ -86,6 +92,8 @@ def calculate_fill_density(top_cell, cell):
     if total_area == 0:
         return 0
     total_fill_area = sum(polygon.area() for polygon in cell.get_polygons())
+    if total_fill_area == 0:
+        return 0
     return round((total_fill_area / total_area) * 100, 2)
 
 
