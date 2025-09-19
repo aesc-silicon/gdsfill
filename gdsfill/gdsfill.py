@@ -14,7 +14,9 @@ import argparse
 import tempfile
 import importlib
 from pathlib import Path
-from multiprocessing import Process
+from multiprocessing import Process, Queue
+from rich.live import Live
+from rich.console import Console
 
 from gdsfill.library.klayout import (
   get_version,
@@ -32,6 +34,7 @@ from gdsfill.library.fill import fill_layer
 
 
 # pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
+# pylint: disable=too-many-branches, too-many-statements
 def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run, core_size=None):
     """
     Run the fill pipeline for a single layer.
@@ -52,39 +55,70 @@ def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run, core_size=None):
     Returns:
         None
     """
-    print(f"--- Layer {layer} ---")
+    print(f">>> Layer {layer}")
 
     output_path = Path(tmpdirname) / layer
     for stage in ('raw', 'modified', 'filled'):
         (output_path / stage).mkdir(parents=True, exist_ok=True)
+    console = Console(color_system=None)
 
-    export_layer(pdk, inputfile, output_path, layer, core_size)
+    with Live("Exporting tiles ...\n", console=console, refresh_per_second=4) as live:
+        export_layer(pdk, inputfile, output_path, layer, core_size)
+        live.update("Exporting tiles ... done\n")
+
     tiles = open_yaml(output_path / "tiles.yaml")
 
+    print("Preparing tiles:")
+    lines = [f"  [ ] {tile.replace('_', 'x')}" for tile in tiles['tiles'].keys()]
     prepare_module = importlib.import_module(f'gdsfill.{pdk.get_name()}.prepare')
-    procs_modify = []
-    for tile in tiles['tiles'].keys():
-        raw_tile = output_path / "raw" / f"tile_{tile}.gds"
-        proc = Process(target=prepare_module.prepare_tile, args=(pdk, raw_tile, layer))
-        procs_modify.append(proc)
-        proc.start()
-    for proc in procs_modify:
-        proc.join()
+    procs_modify = {}
+    with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
+        for idx, tile in enumerate(tiles['tiles'].keys()):
+            raw_tile = output_path / "raw" / f"tile_{tile}.gds"
+            proc = Process(target=prepare_module.prepare_tile, args=(pdk, raw_tile, layer))
+            procs_modify[idx] = {'tile': tile.replace('_', 'x'), 'pid': proc}
+            proc.start()
+        while procs_modify:
+            for idx in list(procs_modify):
+                procs_modify[idx]['pid'].join(0.1)
+                if procs_modify[idx]['pid'].exitcode is not None:
+                    lines[idx] = f"  [✔] {procs_modify[idx]['tile']}"
+                    live.update("\n".join(lines))
+                    del procs_modify[idx]
 
-    procs_fill = []
-    for tile, values in tiles['tiles'].items():
-        file = output_path / "modified" / f"tile_{tile}.gds"
-        proc = Process(target=fill_layer,
-                       args=(pdk, file, layer, tiles, Tile(values['x'], values['y'])))
-        procs_fill.append(proc)
-        proc.start()
-    for proc in procs_fill:
-        proc.join()
+    print("\nFilling tiles:")
+    lines = [f"  [ ] {tile.replace('_', 'x')}" for tile in tiles['tiles'].keys()]
+    procs_fill = {}
+    with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
+        for idx, (tile, values) in enumerate(tiles['tiles'].items()):
+            file = output_path / "modified" / f"tile_{tile}.gds"
+            queue = Queue()
+            proc = Process(target=fill_layer,
+                           args=(pdk, file, layer, queue, tiles, Tile(values['x'], values['y'])))
+            procs_fill[idx] = {'tile': tile.replace('_', 'x'), 'queue': queue, 'pid': proc}
+            proc.start()
+        while procs_fill:
+            for idx in list(procs_fill):
+                procs_fill[idx]['pid'].join(0.1)
+                if procs_fill[idx]['pid'].exitcode is not None:
+                    result = procs_fill[idx]['queue'].get()
+                    if result[0] == "success":
+                        symbol = "✔"
+                    elif result[0] == "skipped":
+                        symbol = "-"
+                    else:
+                        symbol = "x"
+                    lines[idx] = f"  [{symbol}] {procs_fill[idx]['tile']: <9} {result[1]}"
+                    live.update("\n".join(lines))
+                    del procs_fill[idx]
 
+    print()
     if dry_run:
-        print("Skip merging filled tiles because --dry-run was passed.")
+        print("--dry-run enabled: skipping merge step\n")
     else:
-        merge_tile(pdk, inputfile, output_path / "filled", output_path / "tiles.yaml")
+        with Live("Merging tiles ...\n", console=console, refresh_per_second=4) as live:
+            merge_tile(pdk, inputfile, output_path / "filled", output_path / "tiles.yaml")
+            live.update("Merging tiles ... done\n")
 
 
 def func_fill(args, pdk):

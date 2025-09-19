@@ -129,7 +129,7 @@ def _fill_square(pdk, layer: str, tile, annotated_cell, parameter: SquareParamet
         max_depth (int): Remaining recursion depth.
 
     Returns:
-        gdstk.Cell: Cell containing filler polygons.
+        tuple[gdstk.Cell, str]: Cell containing filler polygons and fill result.
     """
     values = list(itertools.product(parameter.size, parameter.space))
 
@@ -137,7 +137,7 @@ def _fill_square(pdk, layer: str, tile, annotated_cell, parameter: SquareParamet
     for (size_, space_) in values:
         filler_grid = _fill_square_logic(pdk, layer, tile, annotated_cell, size_, space_)
         fill_density = calculate_fill_density(annotated_cell, filler_grid)
-        tile_density = round(parameter.density + fill_density, 3)
+        tile_density = round(parameter.density + fill_density, 2)
         results.append((tile_density, filler_grid, size_, space_))
 
     closest = min(results, key=lambda x: abs(x[0] - pdk.get_layer_density(layer)))
@@ -145,11 +145,9 @@ def _fill_square(pdk, layer: str, tile, annotated_cell, parameter: SquareParamet
     max_fill = pdk.get_layer_density(layer) + pdk.get_layer_deviation(layer)
 
     if parameter.max_depth == 0:
-        print(f"Final density {closest[0]} % - reached maximum depth")
-        return closest[1]
+        return (closest[1], round(closest[0] - parameter.density, 2))
     if closest[0] > min_fill and closest[0] < max_fill:
-        print(f"Final density {closest[0]} %")
-        return closest[1]
+        return (closest[1], round(closest[0] - parameter.density, 2))
 
     min_size = min(parameter.position[0], closest[2])
     max_size = max(parameter.position[0], closest[2])

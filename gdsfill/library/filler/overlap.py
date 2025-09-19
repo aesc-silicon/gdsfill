@@ -87,7 +87,7 @@ def fill_overlap(pdk, layer: str, tiles, tile, annotated_cell):
         annotated_cell: GDS cell with annotations for placement and keep-out.
 
     Returns:
-        gdstk.Cell: Cell containing filler polygons.
+        tuple[gdstk.Cell, str]: Cell containing filler polygons and fill result.
     """
     fill_rules = pdk.get_fill_rules(layer, 'Overlap')
     max_depth = pdk.get_layer_max_depth(layer)
@@ -131,7 +131,7 @@ def _fill_overlap(pdk, layer: str, annotated_cell, references, parameter):
         filler_grid = _fill_overlap_logic(pdk, layer, annotated_cell, references, width_, height_,
                                           parameter.max_height)
         fill_density = calculate_fill_density(annotated_cell, filler_grid)
-        tile_density = round(parameter.density + fill_density, 3)
+        tile_density = round(parameter.density + fill_density, 2)
         results.append((tile_density, filler_grid, width_, height_))
 
     closest = min(results, key=lambda x: abs(x[0] - pdk.get_layer_density(layer)))
@@ -139,11 +139,9 @@ def _fill_overlap(pdk, layer: str, annotated_cell, references, parameter):
 
     max_depth = parameter.max_depth - 1
     if max_depth == 0:
-        print(f"Final density {closest[0]} % - reached maximum depth")
-        return closest[1]
+        return (closest[1], round(closest[0] - parameter.density, 2))
     if parameter.fill_density >= closest[0]:
-        print(f"Final density {closest[0]} %")
-        return closest[1]
+        return (closest[1], round(closest[0] - parameter.density, 2))
 
     width = (closest[2], closest[2] + parameter.step)
     height = (closest[3], closest[3] + parameter.step)

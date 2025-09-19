@@ -242,8 +242,6 @@ def prepare_tile(pdk, raw_tile: Path, layer: str) -> bool:
     Returns:
         bool: True if the tile was successfully processed.
     """
-    _, x, y = raw_tile.stem.split('_')
-    print(f"Preparing Tile {x}x{y}")
     library = gdstk.read_gds(raw_tile, unit=1e-6)
     top_cell = library.top_level()[0]
     FUNC_MAPPING[layer](top_cell)

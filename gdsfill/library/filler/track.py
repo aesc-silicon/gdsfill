@@ -10,6 +10,7 @@ import gdstk
 from gdsfill.library.filler.helper import (
     calculate_core_density,
     calculate_core_fill_density,
+    calculate_fill_density,
     check_min_size,
     get_layer,
     get_polygons,
@@ -49,7 +50,7 @@ def fill_track(pdk, layer: str, tiles, tile, annotated_cell):
         annotated_cell (gdstk.Cell): Target cell where filler polygons are inserted.
 
     Returns:
-        gdstk.Cell: The cell containing generated filler polygons.
+        tuple[gdstk.Cell, str]: Cell containing filler polygons and fill result.
     """
     fill_rules = pdk.get_fill_rules(layer, 'Track')
     density = calculate_core_density(annotated_cell)
@@ -75,16 +76,15 @@ def fill_track(pdk, layer: str, tiles, tile, annotated_cell):
         offsets = (offset_x + step * fill_rules['gaps'], offset_y + fill_rules['gaps'])
         for width in range(5, 1, -1):
             _fill_track_logic(pdk, layer, tiles, tile, annotated_cell, filler_cells, width, offsets)
-            filled_density = density + calculate_core_fill_density(annotated_cell, filler_cells)
-            if filled_density > min_fill:
+            fill_density = density + calculate_core_fill_density(annotated_cell, filler_cells)
+            if fill_density > min_fill:
+                tile_fill_density = calculate_fill_density(annotated_cell, filler_cells)
                 add_filler_cells(annotated_cell, filler_cells, fill_rules['gaps'])
-                print(f"Final density {round(filled_density, 2)} %")
-                return filler_cells
+                return (filler_cells, round(tile_fill_density, 2))
 
-    filled_density = density + calculate_core_fill_density(annotated_cell, filler_cells)
+    tile_fill_density = calculate_fill_density(annotated_cell, filler_cells)
     add_filler_cells(annotated_cell, filler_cells, fill_rules['gaps'])
-    print(f"Final density {round(filled_density, 2)} %")
-    return filler_cells
+    return (filler_cells, round(tile_fill_density, 2))
 
 
 def _fill_track_logic(pdk, layer: str, tiles, tile, annotated_cell, filler_cells, width: int,
