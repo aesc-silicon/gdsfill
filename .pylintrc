@@ -66,7 +66,8 @@ ignore-patterns=^\.#
 # Unix pattern matching.
 ignored-modules=gdstk,
                 pya,
-                packaging
+                packaging,
+                rich
 
 # Python code to execute, usually for sys.path manipulation such as
 # pygtk.require().

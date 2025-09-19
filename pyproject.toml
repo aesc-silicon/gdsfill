@@ -26,6 +26,7 @@ dependencies = [
     "pyyaml",
     "packaging",
     "gdstk",
+    "rich"
 ]
 
 [project.urls]
