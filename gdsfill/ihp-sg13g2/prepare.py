@@ -1,34 +1,44 @@
 """
 Tile preparation utilities for PDK fill flows.
 
-This module prepares metal and top-metal tiles for dummy fill insertion.
-It parses layer definitions from a YAML configuration file, applies
-geometric transformations (offsets and booleans) using `gdstk`, and
-produces modified GDS files that contain blocking regions for fill
-algorithms.
+This module prepares activ, gatpoly, metal and top-metal tiles for
+dummy fill insertion. It parses layer definitions from a YAML
+configuration file, applies geometric transformations using KLayout's
+internal API, and produces modified GDS files that contain blocking
+regions for fill algorithms.
 """
 # pylint: disable=too-many-locals
+import sys
 from pathlib import Path
+import pya
 import yaml
-import gdstk
+
+
+try:
+    layer_name  # pylint: disable=used-before-assignment
+except NameError:
+    print("Missing layer_name argument. Please define '-rd layer_name=<layer_name>'")
+    sys.exit(1)
+
 
 script = Path(__file__).parent.resolve()
-layers = yaml.safe_load((script / "../library/layers.yaml").read_text(encoding='utf-8'))
+content = (script / "constants.yaml").read_text(encoding="utf-8")
+constants = yaml.safe_load(content)
+DB2NM = constants["DB2NM"]
+layers = yaml.safe_load((script / "../library/layers.yaml").read_text(encoding="utf-8"))
 
 
-def get_layer(layer):
+def get_layer(layer: str) -> tuple[int, int]:
     """
-    Look up the GDS layer and datatype for a given layer name.
+    Return (layer, datatype) tuple for a given layer name.
 
     Args:
-        layer (str): Name of the layer (as defined in `layers.yaml`).
+        layer (str): Name of the layer as defined in layers.yaml.
 
     Returns:
-        dict: A dictionary with keys:
-            - 'layer': Layer index (int).
-            - 'datatype': Datatype index (int).
+        tuple[int, int]: (layer index, datatype)
     """
-    return {'layer': layers[layer]['index'], 'datatype': layers[layer]['type']}
+    return (layers[layer]["index"], layers[layer]["type"])
 
 
 def prepare_activ(top_cell):
@@ -43,46 +53,41 @@ def prepare_activ(top_cell):
         - Add the resulting blocking polygons to the top cell.
 
     Args:
-        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+        top_cell: The top-level cell of the tile GDS.
     """
-    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
-    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
-    drawing = top_cell.get_polygons(**get_layer('drawing'))
-    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))  # TRANS
-    keep_away1 = top_cell.get_polygons(**get_layer('keep_away_1'))  # GatPoly
-    keep_away2 = top_cell.get_polygons(**get_layer('keep_away_2'))  # Cont
-    keep_away3 = top_cell.get_polygons(**get_layer('keep_away_3'))  # NWell
-    keep_away4 = top_cell.get_polygons(**get_layer('keep_away_4'))  # nBuLay
-    keep_away5 = top_cell.get_polygons(**get_layer('keep_away_5'))  # PWell:block
+    gatpoly = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_1"))))
+    cont = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_2"))))
+    AFil_c = gatpoly.sized(1.1 * DB2NM) + cont.sized(1.1 * DB2NM)
+    del gatpoly
+    del cont
 
-    AFil_c_gp = gdstk.offset(keep_away1, 1.1, **get_layer('keep_out'))
-    AFil_c_cont = gdstk.offset(keep_away2, 1.1, **get_layer('keep_out'))
-    AFil_c = gdstk.boolean(AFil_c_gp, AFil_c_cont, operation='or', **get_layer('keep_out'))
+    drawing = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("drawing"))))
+    AFil_c1 = drawing.sized(0.42 * DB2NM)
+    del drawing
 
-    AFil_c1 = gdstk.offset(drawing, 0.42, **get_layer('keep_out'))
+    nwell = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_3"))))
+    AFil_d_a = nwell.sized(1.0 * DB2NM) - nwell.sized(-1.0 * DB2NM)
+    del nwell
 
-    AFil_d_a_out = gdstk.offset(keep_away3, 1.0, **get_layer('keep_out'))
-    AFil_d_a_in = gdstk.offset(keep_away3, -1.0, **get_layer('keep_out'))
-    AFil_d_a = gdstk.boolean(AFil_d_a_out, AFil_d_a_in, operation='not', **get_layer('keep_out'))
+    nblulay = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_4"))))
+    AFil_d_b = nblulay.sized(1.0 * DB2NM) - nblulay.sized(-1.0 * DB2NM)
+    del nblulay
 
-    AFil_d_b_out = gdstk.offset(keep_away4, 1.0, **get_layer('keep_out'))
-    AFil_d_b_in = gdstk.offset(keep_away4, -1.0, **get_layer('keep_out'))
-    AFil_d_b = gdstk.boolean(AFil_d_b_out, AFil_d_b_in, operation='not', **get_layer('keep_out'))
-    AFil_d = gdstk.boolean(AFil_d_a, AFil_d_b, operation='or', **get_layer('keep_out'))
+    AFil_d = AFil_d_a + AFil_d_b
 
-    AFil_e = gdstk.offset(keep_away0, 1.0, **get_layer('keep_out'))
+    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
+    AFil_e = trans.sized(1.0 * DB2NM)
+    del trans
 
-    AFil_i_out = gdstk.offset(keep_away5, 1.5, **get_layer('keep_out'))
-    AFil_i_in = gdstk.offset(keep_away5, -1.5, **get_layer('keep_out'))
-    AFil_i = gdstk.boolean(AFil_i_out, AFil_i_in, operation='not', **get_layer('keep_out'))
+    pwell_block = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_5"))))
+    AFil_i = pwell_block.sized(1.5 * DB2NM) - pwell_block.sized(-1.5 * DB2NM)
+    del pwell_block
 
-    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
-    blocking_b = gdstk.boolean(AFil_c, AFil_c1, operation='or', **get_layer('keep_out'))
-    blocking_c = gdstk.boolean(AFil_d, AFil_e, operation='or', **get_layer('keep_out'))
-    blocking0 = gdstk.boolean(blocking_a, blocking_b, operation='or', **get_layer('keep_out'))
-    blocking1 = gdstk.boolean(blocking_c, AFil_i, operation='or', **get_layer('keep_out'))
-    blocking = gdstk.boolean(blocking0, blocking1, operation='or', **get_layer('keep_out'))
-    top_cell.add(*(poly for poly in blocking))
+    nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
+    tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
+
+    keep_out = nofill + tile_border + AFil_c + AFil_c1 + AFil_d + AFil_e + AFil_i
+    top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
 def prepare_gatpoly(top_cell):
@@ -97,48 +102,40 @@ def prepare_gatpoly(top_cell):
         - Add the resulting blocking polygons to the top cell.
 
     Args:
-        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+        top_cell: The top-level cell of the tile GDS.
     """
-    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
-    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
-    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))  # TRANS
-    keep_away1 = top_cell.get_polygons(**get_layer('keep_away_1'))  # GatPoly
-    keep_away2 = top_cell.get_polygons(**get_layer('keep_away_2'))  # Cont
-    keep_away3 = top_cell.get_polygons(**get_layer('keep_away_3'))  # NWell
-    keep_away4 = top_cell.get_polygons(**get_layer('keep_away_4'))  # nBuLay
-    keep_away5 = top_cell.get_polygons(**get_layer('keep_away_5'))  # Activ
-    keep_away6 = top_cell.get_polygons(**get_layer('keep_away_6'))  # pSD
-    keep_away7 = top_cell.get_polygons(**get_layer('keep_away_7'))  # nSD:block
-    keep_away8 = top_cell.get_polygons(**get_layer('keep_away_8'))  # SalBlock
+    gatpoly = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_1"))))
+    cont = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_2"))))
+    activ = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_5"))))
+    psd = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_6"))))
+    nsd_block = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_7"))))
+    salblock = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_8"))))
+    GFil_d = gatpoly.sized(1.1 * DB2NM) + cont.sized(1.1 * DB2NM) + activ.sized(1.1 * DB2NM) + \
+        psd.sized(1.1 * DB2NM) + nsd_block.sized(1.1 * DB2NM) + salblock.sized(1.1 * DB2NM)
+    del activ
+    del gatpoly
+    del cont
+    del psd
+    del nsd_block
+    del salblock
 
-    GFil_d_gp = gdstk.offset(keep_away1, 1.1, **get_layer('keep_out'))
-    GFil_d_cont = gdstk.offset(keep_away2, 1.1, **get_layer('keep_out'))
-    GFil_d_activ = gdstk.offset(keep_away5, 1.1, **get_layer('keep_out'))
-    GFil_d_psd = gdstk.offset(keep_away6, 1.1, **get_layer('keep_out'))
-    GFil_d_nsd_block = gdstk.offset(keep_away7, 1.1, **get_layer('keep_out'))
-    GFil_d_salblock = gdstk.offset(keep_away8, 1.1, **get_layer('keep_out'))
-    GFil_d_a = gdstk.boolean(GFil_d_gp, GFil_d_cont, operation='or', **get_layer('keep_out'))
-    GFil_d_b = gdstk.boolean(GFil_d_activ, GFil_d_psd, operation='or', **get_layer('keep_out'))
-    GFil_d_c = gdstk.boolean(GFil_d_nsd_block, GFil_d_salblock, operation='or',
-                             **get_layer('keep_out'))
-    GFil_d_0 = gdstk.boolean(GFil_d_a, GFil_d_b, operation='or', **get_layer('keep_out'))
-    GFil_d = gdstk.boolean(GFil_d_0, GFil_d_c, operation='or', **get_layer('keep_out'))
+    nwell = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_3"))))
+    GFil_e_a = nwell.sized(1.0 * DB2NM) - nwell.sized(-1.0 * DB2NM)
+    del nwell
+    nblulay = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_4"))))
+    GFil_e_b = nblulay.sized(1.0 * DB2NM) - nblulay.sized(-1.0 * DB2NM)
+    del nblulay
+    GFil_e = GFil_e_a + GFil_e_b
 
-    GFil_e1_out = gdstk.offset(keep_away3, 1.1, **get_layer('keep_out'))
-    GFil_e1_in = gdstk.offset(keep_away3, -1.1, **get_layer('keep_out'))
-    GFil_e1 = gdstk.boolean(GFil_e1_out, GFil_e1_in, operation='not', **get_layer('keep_out'))
-    GFil_e2_out = gdstk.offset(keep_away4, 1.1, **get_layer('keep_out'))
-    GFil_e2_in = gdstk.offset(keep_away4, -1.1, **get_layer('keep_out'))
-    GFil_e2 = gdstk.boolean(GFil_e2_out, GFil_e2_in, operation='not', **get_layer('keep_out'))
-    GFil_e = gdstk.boolean(GFil_e1, GFil_e2, operation='or', **get_layer('keep_out'))
+    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
+    GFil_f = trans.sized(1.1 * DB2NM)
+    del trans
 
-    GFil_f = gdstk.offset(keep_away0, 1.1, **get_layer('keep_out'))
+    nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
+    tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
 
-    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
-    blocking_b = gdstk.boolean(GFil_d, GFil_e, operation='or', **get_layer('keep_out'))
-    blocking0 = gdstk.boolean(blocking_a, blocking_b, operation='or', **get_layer('keep_out'))
-    blocking = gdstk.boolean(GFil_f, blocking0, operation='or', **get_layer('keep_out'))
-    top_cell.add(*(poly for poly in blocking))
+    keep_out = nofill + tile_border + GFil_d + GFil_e + GFil_f
+    top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
 def prepare_metal(top_cell):
@@ -153,25 +150,25 @@ def prepare_metal(top_cell):
         - Add the resulting blocking polygons to the top cell.
 
     Args:
-        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+        top_cell: The top-level cell of the tile GDS.
     """
-    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
-    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
-    filler = top_cell.get_polygons(**get_layer('filler'))
-    drawing = top_cell.get_polygons(**get_layer('drawing'))
-    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))
+    filler = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("filler"))))
+    MxFil_b = filler.sized(0.42 * DB2NM)
+    del filler
 
-    MxFil_b = gdstk.offset(filler, 0.42, **get_layer('keep_out'))
-    MxFil_c = gdstk.offset(drawing, 0.42, **get_layer('keep_out'))
-    MxFil_d = gdstk.offset(keep_away0, 1.0, **get_layer('keep_out'))
-    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
-    blocking_b = gdstk.boolean(blocking_a, MxFil_b, operation='or', **get_layer('keep_out'))
-    if MxFil_d:
-        blocking_c = gdstk.boolean(MxFil_c, MxFil_d, operation='or', **get_layer('keep_out'))
-    else:
-        blocking_c = MxFil_c
-    blocking = gdstk.boolean(blocking_b, blocking_c, operation='or', **get_layer('keep_out'))
-    top_cell.add(*(poly for poly in blocking))
+    drawing = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("drawing"))))
+    MxFil_c = drawing.sized(0.42 * DB2NM)
+    del drawing
+
+    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
+    MxFil_d = trans.sized(1.0 * DB2NM)
+    del trans
+
+    nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
+    tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
+
+    keep_out = nofill + tile_border + MxFil_b + MxFil_c + MxFil_d
+    top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
 def prepare_topmetal(top_cell):
@@ -190,25 +187,25 @@ def prepare_topmetal(top_cell):
         - Add the resulting blocking polygons to the top cell.
 
     Args:
-        top_cell (gdstk.Cell): The top-level cell of the tile GDS.
+        top_cell: The top-level cell of the tile GDS.
     """
-    nofill = top_cell.get_polygons(**get_layer('nofill_area'))
-    tile_border = top_cell.get_polygons(**get_layer('tile_border'))
-    filler = top_cell.get_polygons(**get_layer('filler'))
-    drawing = top_cell.get_polygons(**get_layer('drawing'))
-    keep_away0 = top_cell.get_polygons(**get_layer('keep_away_0'))
+    filler = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("filler"))))
+    TMxFil_b = filler.sized(3.0 * DB2NM)
+    del filler
 
-    TMxFil_b = gdstk.offset(filler, 3.0, **get_layer('keep_out'))
-    TMxFil_c = gdstk.offset(drawing, 3.0, **get_layer('keep_out'))
-    TMxFil_d = gdstk.offset(keep_away0, 4.9, **get_layer('keep_out'))
-    blocking_a = gdstk.boolean(nofill, tile_border, operation='or', **get_layer('keep_out'))
-    blocking_b = gdstk.boolean(blocking_a, TMxFil_b, operation='or', **get_layer('keep_out'))
-    if TMxFil_d:
-        blocking_c = gdstk.boolean(TMxFil_c, TMxFil_d, operation='or', **get_layer('keep_out'))
-    else:
-        blocking_c = TMxFil_c
-    blocking = gdstk.boolean(blocking_b, blocking_c, operation='or', **get_layer('keep_out'))
-    top_cell.add(*(poly for poly in blocking))
+    drawing = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("drawing"))))
+    TMxFil_c = drawing.sized(3.0 * DB2NM)
+    del drawing
+
+    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
+    TMxFil_d = trans.sized(4.9 * DB2NM)
+    del trans
+
+    nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
+    tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
+
+    keep_out = nofill + tile_border + TMxFil_b + TMxFil_c + TMxFil_d
+    top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
 FUNC_MAPPING = {
@@ -224,27 +221,7 @@ FUNC_MAPPING = {
 }
 
 
-# pylint: disable=unused-argument
-def prepare_tile(pdk, raw_tile: Path, layer: str) -> bool:
-    """
-    Prepare a raw tile GDS file by applying blocking rules for a given layer.
-
-    This is the main entry point for tile preparation. It selects the
-    appropriate preparation function (`prepare_metal` or
-    `prepare_topmetal`) based on the layer and writes a new GDS file
-    with the modifications.
-
-    Args:
-        pdk (PdkInformation): Process design kit metadata (currently unused).
-        raw_tile (Path): Path to the raw tile GDS file.
-        layer (str): Layer name (must exist in FUNC_MAPPING).
-
-    Returns:
-        bool: True if the tile was successfully processed.
-    """
-    library = gdstk.read_gds(raw_tile, unit=1e-6)
-    top_cell = library.top_level()[0]
-    FUNC_MAPPING[layer](top_cell)
-    out_file = str(raw_tile).replace('raw', 'modified')
-    library.write_gds(out_file)
-    return True
+layout = pya.CellView.active().layout()
+design_cell = layout.top_cell()
+FUNC_MAPPING[layer_name](design_cell)  # noqa: F821  # pylint: disable=undefined-variable
+layout.write(pya.CellView.active().filename().replace('raw', 'modified'))

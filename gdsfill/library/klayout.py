@@ -17,7 +17,9 @@ def _run(commands: List[str]):
     Execute a KLayout command as a subprocess.
 
     Args:
-        commands: List of CLI arguments to pass to KLayout.
+        commands (List[str]): A list of command-line arguments to pass to
+            the `klayout` executable. Each element should be a separate
+            argument (do not provide a single concatenated string).
 
     Returns:
         CompletedProcess: Result object from subprocess.run,
@@ -33,6 +35,23 @@ def _run(commands: List[str]):
         print(f"Command: {' '.join(cmd)}")
         print(result.stderr.decode('utf-8').rstrip('\n'))
     return result
+
+
+def _popen(commands: List[str]):
+    """
+    Launch a KLayout subprocess with the given command-line arguments.
+
+    Args:
+        commands (List[str]): A list of command-line arguments to pass to
+            the `klayout` executable. Each element should be a separate
+            argument (do not provide a single concatenated string).
+
+    Returns:
+        subprocess.Popen: A Popen object representing the launched process,
+        which can be used to interact with or wait for the process.
+    """
+    cmd = ["klayout"] + commands
+    return subprocess.Popen(cmd)
 
 
 def _get_script_path(pdk, script_name: str) -> str:
@@ -87,21 +106,22 @@ def export_layer(pdk, inputfile, output_path, layer, core_size=None):
     _run(cmd)
 
 
-def prepare_tiles(pdk, output_path, layer):
+def prepare_tile(pdk, inputfile, layer):
     """
     Run the tile preparation step for a specific layer.
 
     Args:
         pdk: PdkInformation object.
-        output_path: Directory containing the raw exported tiles.
+        inputfile: Input tile to prepare.
         layer: Name of the layer being prepared.
 
     Notes:
-        Prepares tiles for further fill or density analysis.
+        Prepares tiles for further fill.
     """
-    cmd = ["-zz", "-r", _get_script_path(pdk, "prepare.py"), "-rd", f"output_path={output_path}",
-           "-rd", f"layer_name={layer}"]
-    _run(cmd)
+    filename = Path(inputfile)
+    cmd = ["-zz", "-r", _get_script_path(pdk, "prepare.py"), "-rd", f"layer_name={layer}",
+           str(filename)]
+    return _popen(cmd)
 
 
 def print_density(pdk, inputfile):

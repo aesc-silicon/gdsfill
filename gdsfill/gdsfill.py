@@ -12,7 +12,6 @@ in the PDK, and relies on Klayout for GDSII operations.
 
 import argparse
 import tempfile
-import importlib
 from pathlib import Path
 from multiprocessing import Process, Queue
 from rich.live import Live
@@ -22,6 +21,7 @@ from gdsfill.library.klayout import (
   get_version,
   export_layer,
   print_density,
+  prepare_tile,
   erase_fill,
   merge_tile
 )
@@ -70,18 +70,16 @@ def _fill_layer(layer, pdk, inputfile, tmpdirname, dry_run, core_size=None):
 
     print("Preparing tiles:")
     lines = [f"  [ ] {tile.replace('_', 'x')}" for tile in tiles['tiles'].keys()]
-    prepare_module = importlib.import_module(f'gdsfill.{pdk.get_name()}.prepare')
     procs_modify = {}
     with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
         for idx, tile in enumerate(tiles['tiles'].keys()):
             raw_tile = output_path / "raw" / f"tile_{tile}.gds"
-            proc = Process(target=prepare_module.prepare_tile, args=(pdk, raw_tile, layer))
+            proc = prepare_tile(pdk, raw_tile, layer)
             procs_modify[idx] = {'tile': tile.replace('_', 'x'), 'pid': proc}
-            proc.start()
         while procs_modify:
             for idx in list(procs_modify):
-                procs_modify[idx]['pid'].join(0.1)
-                if procs_modify[idx]['pid'].exitcode is not None:
+                procs_modify[idx]['pid'].poll()
+                if procs_modify[idx]['pid'].returncode is not None:
                     lines[idx] = f"  [✔] {procs_modify[idx]['tile']}"
                     live.update("\n".join(lines))
                     del procs_modify[idx]
