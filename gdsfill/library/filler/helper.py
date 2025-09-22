@@ -205,7 +205,9 @@ def get_cell_distance(references: list[tuple[tuple[float, float], tuple[float, f
     ref = references[0]
     cells = sorted([r[0] for r in references if r[0][0] == ref[0][0]])
     gaps = [round(cells[i + 1][1] - cells[i][1], 3) for i in range(len(cells) - 1)]
-    return Counter(gaps).most_common(1)[0][0]
+    if not (most_common := Counter(gaps).most_common(1)):
+        return None
+    return most_common[0][0]
 
 
 def get_center_point(polygon: list[tuple[float, float]]) -> tuple[float, float]:

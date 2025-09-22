@@ -99,8 +99,12 @@ def fill_overlap(pdk, layer: str, tiles, tile, annotated_cell):
     for poly in get_polygons(annotated_cell, 'reference'):
         references.append((get_center_point(poly.points), get_box_dimension(poly.points)))
 
-    cell_distance = get_cell_distance(references) / 2
-    cell_distance = round(math.ceil((cell_distance - 0.81) / 0.005) * 0.005, 3)
+    if not references:
+        return (gdstk.Cell(name='FILLER_CELL_OVERLAP_EMPTY'), 0.0)
+
+    if not (cell_distance := get_cell_distance(references)):
+        return (gdstk.Cell(name='FILLER_CELL_OVERLAP_EMPTY'), 0.0)
+    cell_distance = round(math.ceil(((cell_distance / 2) - 0.81) / 0.005) * 0.005, 3)
 
     step = max_size / max_depth
     step = 0.5
