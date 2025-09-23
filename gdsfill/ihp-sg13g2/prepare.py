@@ -120,10 +120,10 @@ def prepare_gatpoly(top_cell):
     del salblock
 
     nwell = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_3"))))
-    GFil_e_a = nwell.sized(1.0 * DB2NM) - nwell.sized(-1.0 * DB2NM)
+    GFil_e_a = nwell.sized(1.1 * DB2NM) - nwell.sized(-1.1 * DB2NM)
     del nwell
     nblulay = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_4"))))
-    GFil_e_b = nblulay.sized(1.0 * DB2NM) - nblulay.sized(-1.0 * DB2NM)
+    GFil_e_b = nblulay.sized(1.1 * DB2NM) - nblulay.sized(-1.1 * DB2NM)
     del nblulay
     GFil_e = GFil_e_a + GFil_e_b
 
