@@ -102,8 +102,16 @@ def fill_overlap(pdk, layer: str, tiles, tile, annotated_cell):
     if not references:
         return (gdstk.Cell(name='FILLER_CELL_OVERLAP_EMPTY'), 0.0)
 
-    if not (cell_distance := get_cell_distance(references)):
+    for index in range(0, 10):
+        if not (cell_distance := get_cell_distance(references, index)):
+            return (gdstk.Cell(name='FILLER_CELL_OVERLAP_EMPTY'), 0.0)
+
+        if cell_distance < 10:
+            break
+
+    if cell_distance >= 10:
         return (gdstk.Cell(name='FILLER_CELL_OVERLAP_EMPTY'), 0.0)
+
     cell_distance = round(math.ceil(((cell_distance / 2) - 0.81) / 0.005) * 0.005, 3)
 
     step = max_size / max_depth

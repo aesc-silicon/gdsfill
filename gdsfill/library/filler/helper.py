@@ -189,7 +189,8 @@ def get_box_dimension(polygon: list[tuple[float, float]]) -> tuple[float, float]
     return (width, height)
 
 
-def get_cell_distance(references: list[tuple[tuple[float, float], tuple[float, float]]]) -> float:
+def get_cell_distance(references: list[tuple[tuple[float, float], tuple[float, float]]],
+                      index: int = 0) -> float:
     """Find the most common vertical distance between reference centers.
 
     The function filters references aligned on the same x-coordinate,
@@ -198,11 +199,12 @@ def get_cell_distance(references: list[tuple[tuple[float, float], tuple[float, f
     Args:
         references (list[tuple[tuple[float, float], tuple[float, float]]]):
             List of (center, (width, height)) tuples.
+        index (int): Index to pick the reference point.
 
     Returns:
         float: Most common vertical gap size.
     """
-    ref = references[0]
+    ref = references[index]
     cells = sorted([r[0] for r in references if r[0][0] == ref[0][0]])
     gaps = [round(cells[i + 1][1] - cells[i][1], 3) for i in range(len(cells) - 1)]
     if not (most_common := Counter(gaps).most_common(1)):
