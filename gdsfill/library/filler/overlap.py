@@ -173,7 +173,7 @@ def _fill_overlap_logic(pdk, layer: str, annotated_cell, references, width, heig
     datatype = pdk.get_layer_fill_datatype(layer)
     fill_rules = pdk.get_fill_rules(layer, 'Overlap')
     min_ext = fill_rules['min_extension']
-    min_ext_both = min_ext * 2
+    min_ext_both = min_ext * 2 + 0.01
 
     lib = gdstk.Library(name="filler")
     filler = lib.new_cell('FILLER')
