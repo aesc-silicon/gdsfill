@@ -51,7 +51,7 @@ layers:
       max_width: 5.0
       min_space: 0.42
       max_space: 10.0
-      orientation: horizontal
+      orientation: vertical
       gaps: 0.42
       cell_height: 1.26
   Metal3:
@@ -69,7 +69,7 @@ layers:
       max_width: 5.0
       min_space: 0.42
       max_space: 10.0
-      orientation: vertical
+      orientation: horizontal
       gaps: 0.42
       cell_height: 1.26
   Metal4:
@@ -87,7 +87,7 @@ layers:
       max_width: 5.0
       min_space: 0.42
       max_space: 10.0
-      orientation: horizontal
+      orientation: vertical
       gaps: 0.42
       cell_height: 1.26
   Metal5:
@@ -105,7 +105,7 @@ layers:
       max_width: 5.0
       min_space: 0.42
       max_space: 10.0
-      orientation: vertical
+      orientation: horizontal
       gaps: 0.42
       cell_height: 1.26
   TopMetal1:
