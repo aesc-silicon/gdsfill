@@ -143,7 +143,7 @@ def func_fill(args, pdk):
         None
     """
     if args.keep_data:
-        tmpdirname = Path.cwd() / "gdsfill-tmp"
+        tmpdirname = Path.cwd() / "gdsfill-tmp" / args.input.stem.split('.')[0]
         print(f"Data are stored in {tmpdirname}")
         for layer, _ in pdk.get_layers():
             _fill_layer(layer, pdk, args, tmpdirname)
