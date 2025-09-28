@@ -54,6 +54,7 @@ layers:
       orientation: vertical
       gaps: 0.48
       cell_height: 1.26
+      aggressive_fill: true
   Metal3:
     index: 30
     drawing: 0
