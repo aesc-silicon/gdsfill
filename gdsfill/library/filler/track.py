@@ -5,7 +5,6 @@ Provides functions to insert filler geometries into annotated cells while
 respecting layer rules, spacing, and keep-out regions.
 """
 # pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
-import math
 import gdstk
 from gdsfill.library.filler.helper import (
     calculate_core_density,
@@ -13,6 +12,7 @@ from gdsfill.library.filler.helper import (
     calculate_fill_density,
     check_min_size,
     get_layer,
+    get_track_offset,
     get_polygons,
     remove_shortest_edge
 )
@@ -55,15 +55,21 @@ def fill_track(pdk, layer: str, tiles, tile, annotated_cell):
     fill_rules = pdk.get_fill_rules(layer, 'Track')
     density = calculate_core_density(annotated_cell)
     min_fill = pdk.get_layer_density(layer) - pdk.get_layer_deviation(layer)
-    cell_height = fill_rules['cell_height']
 
     if 'core' not in tiles:
         raise KeyError("Track filler algorithm requires information about the core."
                        "Please define --core-size llx lly urx ury")
 
+    if not get_polygons(annotated_cell, 'placement_core'):
+        return (gdstk.Cell(name='FILLER_CELL_TRACK_EMPTY'), 0.0)
+
     if tiles['core']['x'] < tile.x:
-        tracks = math.ceil((tile.x - tiles['core']['x']) / cell_height)
-        offset_x = round(abs((tiles['core']['x'] + (tracks * cell_height)) - tile.x), 3)
+        valid_tracks = gdstk.boolean(get_polygons(annotated_cell, 'drawing'),
+                                     get_polygons(annotated_cell, 'placement_core'),
+                                     operation='and')
+        offset_x = get_track_offset(valid_tracks, tile.x, fill_rules['gaps'])
+        if offset_x is None:
+            return (gdstk.Cell(name='FILLER_CELL_TRACK_EMPTY'), 0.0)
     else:
         offset_x = round(abs(tiles['core']['x'] - tile.x), 3)
     if tiles['core']['y'] < tile.y:
@@ -74,8 +80,9 @@ def fill_track(pdk, layer: str, tiles, tile, annotated_cell):
     filler_cells = gdstk.Cell(name='FILLER_CELL_TRACK')
     for step in range(0, 4):
         offsets = (offset_x + step * fill_rules['gaps'], offset_y + fill_rules['gaps'])
-        for width in range(5, 1, -1):
-            _fill_track_logic(pdk, layer, tiles, tile, annotated_cell, filler_cells, width, offsets)
+        for width in range(50, 10, -5):
+            _fill_track_logic(pdk, layer, tiles, tile, annotated_cell, filler_cells, width / 10,
+                              offsets)
             fill_density = density + calculate_core_fill_density(annotated_cell, filler_cells)
             if fill_density > min_fill:
                 tile_fill_density = calculate_fill_density(annotated_cell, filler_cells)
@@ -150,7 +157,13 @@ def _fill_track_logic(pdk, layer: str, tiles, tile, annotated_cell, filler_cells
     final = gdstk.boolean(valid_fills2, get_polygons(annotated_cell, 'keep_out'),
                           operation='not', layer=layerindex, datatype=datatype)
 
+    aggressive_fill = fill_rules.get('aggressive_fill', False)
     for poly in final:
+        if aggressive_fill and poly.size == 8:
+            poly = remove_shortest_edge(poly.points, layerindex, datatype)
+            poly = remove_shortest_edge(poly.points, layerindex, datatype)
+            if check_min_size(poly.points, min_width, min_width):
+                filler_cells.add(poly)
         if poly.size == 6:
             poly = remove_shortest_edge(poly.points, layerindex, datatype)
             if check_min_size(poly.points, min_width, min_width):

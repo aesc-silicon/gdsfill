@@ -5,6 +5,7 @@ Provides geometry utilities and density calculations used by filler modules,
 including polygon validation, size checks, and edge manipulation.
 """
 import math
+from enum import Enum
 from collections import Counter
 from pathlib import Path
 import yaml
@@ -223,8 +224,9 @@ def get_center_point(polygon: list[tuple[float, float]]) -> tuple[float, float]:
     Returns:
         tuple[float, float]: Center coordinates (x, y).
     """
-    x = round(sum(p[0] for p in polygon) / 4, 3)
-    y = round(sum(p[1] for p in polygon) / 4, 3)
+    points = len(polygon)
+    x = round(sum(p[0] for p in polygon) / points, 3)
+    y = round(sum(p[1] for p in polygon) / points, 3)
     return (x, y)
 
 
@@ -239,6 +241,29 @@ def get_layer(layer: str):
         dict: Dictionary with 'layer' index and 'datatype'.
     """
     return {'layer': layers[layer]['index'], 'datatype': layers[layer]['type']}
+
+
+def get_track_offset(tracks, tile_x: float, gap: float) -> float:
+    """
+    Compute the most common offset of track center points relative to a reference x-position.
+
+    Each track of size 8 contributes its center x-coordinate, adjusted by the given
+    reference position (`tile_x`) and wrapped into the interval [0, gap) using modulo.
+    The offsets are rounded to three decimal places, and the most common value is returned.
+
+    Args:
+        tracks: Iterable of track objects, each with attributes `size` and `points`.
+        tile_x (float): Reference x-position to align offsets against.
+        gap (float): Periodicity used for wrapping the offsets.
+
+    Returns:
+        float: The most common offset value in [0, gap).
+        None: If no track with size 8 is found.
+    """
+    off = [round((get_center_point(p.points)[0] - tile_x) % gap, 3) for p in tracks if p.size == 8]
+    if not (most_common := Counter(off).most_common(1)):
+        return None
+    return round(math.ceil(most_common[0][0] / 0.005) * 0.005, 3)
 
 
 def get_polygons(cell, layer):
@@ -289,9 +314,38 @@ def midpoint_snapped(min_size: float, max_size: float, step: float = 0.005) -> f
     return round(snapped, 3)
 
 
+class NodeDirection(Enum):
+    """Enumeration defining Clockwise (CW) and Counterclockwise (CCW) directions."""
+    CW = 1
+    CCW = 2
+
+
+def node_direction(p1, p2, p3):
+    """
+    Determine whether the turn formed by two consecutive edges is clockwise or counterclockwise.
+
+    The function computes the 2D cross product of vectors (p1 -> p2) and (p2 -> p3).
+    A positive cross product indicates a counterclockwise turn, and a negative
+    cross product indicates a clockwise turn.
+
+    Args:
+        p1, p2, p3 (tuple[float, float]): Consecutive 2D points defining two edges.
+
+    Returns:
+        NodeDirection:
+            - NodeDirection.CCW if the turn is counterclockwise.
+            - NodeDirection.CW if the turn is clockwise.
+    """
+    ux, uy = p2[0] - p1[0], p2[1] - p1[1]
+    vx, vy = p3[0] - p2[0], p3[1] - p2[1]
+    cross = ux * vy - uy * vx
+    return NodeDirection.CCW if cross > 0 else NodeDirection.CW
+
+
+# pylint: disable=too-many-locals
 def remove_shortest_edge(polygon, layerindex, datatype):
     """
-    Reduce a 6-vertex polygon to 4 vertices by removing the shortest edge.
+    Reduce a n-vertex polygon to n-2 vertices by removing the shortest edge.
 
     Args:
         polygon (list[tuple[float, float]]): Polygon vertices.
@@ -302,6 +356,7 @@ def remove_shortest_edge(polygon, layerindex, datatype):
         gdstk.Polygon: Adjusted 4-vertex polygon.
     """
     n = len(polygon)
+    m = n - 2
     # Find the shortest edge
     edges = [(i, edge_length(polygon[i], polygon[(i+1) % n])) for i in range(n)]
     min_index, _ = min(edges, key=lambda x: x[1])
@@ -309,17 +364,35 @@ def remove_shortest_edge(polygon, layerindex, datatype):
     # Remove the two vertices that form this edge
     new_poly = [polygon[i] for i in range(n) if i not in (min_index, (min_index+1) % n)]
 
-    for idx in range(0, 4):
-        if (new_poly[idx][0] != new_poly[(idx + 1) % 4][0] and
-           new_poly[idx][1] != new_poly[(idx + 1) % 4][1]):
+    dirs = [node_direction(polygon[i], polygon[(i+1) % n], polygon[(i+2) % n]) for i in range(n)]
+    global_direction = Counter(dirs).most_common(1)[0][0]
 
-            edge_prev = edge_length(new_poly[idx], new_poly[(idx - 1) % 4])
-            edge_past = edge_length(new_poly[(idx + 1) % 4], new_poly[(idx + 2) % 4])
-            is_horizontal = new_poly[(idx - 1) % 4][0] == new_poly[(idx - 2) % 4][0]
+    for idx in range(0, m):
+        delta_x = abs(new_poly[idx][0] - new_poly[(idx + 1) % m][0])
+        delta_y = abs(new_poly[idx][1] - new_poly[(idx + 1) % m][1])
+        if delta_x and delta_y:
+            is_horizontal = delta_x < delta_y
             xy = 0 if is_horizontal else 1
-            if edge_prev > edge_past:
-                new_poly[idx][xy] = new_poly[(idx + 1) % 4][xy]
+
+            ref = new_poly[(idx - 1) % m]
+            cur = new_poly[idx]
+            nxt = new_poly[(idx + 1) % m]
+            if is_horizontal:
+                nxt_angled = (cur[0], new_poly[(idx + 1) % m][1])
             else:
-                new_poly[(idx + 1) % 4][xy] = new_poly[idx][xy]
+                nxt_angled = (new_poly[(idx + 1) % m][0], cur[1])
+
+            direction = node_direction(ref, cur, nxt_angled)
+            # Move towards reference point
+            if global_direction == direction:
+                if abs(ref[xy] - cur[xy]) < abs(ref[xy] - nxt[xy]):
+                    new_poly[(idx + 1) % m][xy] = new_poly[idx][xy]
+                else:
+                    new_poly[idx][xy] = new_poly[(idx + 1) % m][xy]
+            else:
+                if abs(ref[xy] - cur[xy]) < abs(ref[xy] - nxt[xy]):
+                    new_poly[idx][xy] = new_poly[(idx + 1) % m][xy]
+                else:
+                    new_poly[(idx + 1) % m][xy] = new_poly[idx][xy]
             continue
     return gdstk.Polygon(new_poly, layer=layerindex, datatype=datatype)
