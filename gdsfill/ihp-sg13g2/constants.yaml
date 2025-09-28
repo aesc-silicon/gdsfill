@@ -52,7 +52,7 @@ layers:
       min_space: 0.42
       max_space: 10.0
       orientation: vertical
-      gaps: 0.42
+      gaps: 0.48
       cell_height: 1.26
   Metal3:
     index: 30
@@ -88,7 +88,7 @@ layers:
       min_space: 0.42
       max_space: 10.0
       orientation: vertical
-      gaps: 0.42
+      gaps: 0.48
       cell_height: 1.26
   Metal5:
     index: 67
