@@ -92,7 +92,7 @@ def _fill_layer(layer, pdk, args, tmpdirname):
     procs_fill = {}
     with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
         tile_items = list(tiles['tiles'].items())
-        for step in range(0, math.ceil(len(tile_keys) / args.max_processes)):
+        for step in range(0, math.ceil(len(tile_items) / args.max_processes)):
             start = step * args.max_processes
             items = tile_items[slice(start, start + args.max_processes)]
             for idx, (tile, values) in enumerate(items):
