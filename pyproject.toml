@@ -35,3 +35,11 @@ Issues = "https://github.com/aesc-silicon/gdsfill/issues"
 
 [project.scripts]
 gdsfill = "gdsfill.gdsfill:main"
+
+[tool.setuptools.package-data]
+gdsfill = [
+    "library/layers.yaml",
+    "configs/*.yaml",
+    "ihp-sg13g2/*yaml",
+    "ihp-sg13g2/*py",
+]
