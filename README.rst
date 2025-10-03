@@ -47,12 +47,6 @@ To insert dummy metal fill into all supported layers of a layout, run:
 
    gdsfill fill <my-layout.gds>
 
-Some algorithms, such as the track filler, require information about the chip core region. You can provide the lower-left and upper-right coordinates as floating-point values:
-
-.. code-block:: text
-
-   gdsfill fill <my-layout.gds> --core-size llx lly urx ury
-
 By default, **gdsfill** creates a temporary directory for intermediate data.
 Use ``--keep-data`` to retain all generated files in a directory called ``gdsfill-tmp``:
 

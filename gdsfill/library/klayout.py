@@ -84,7 +84,7 @@ def get_version():
     return Version("0.0.0")
 
 
-def export_layer(pdk, inputfile, output_path, layer, core_size=None):
+def export_layer(pdk, inputfile, output_path, layer):
     """
     Export a layout layer into tiled GDS files.
 
@@ -101,8 +101,6 @@ def export_layer(pdk, inputfile, output_path, layer, core_size=None):
     tile_width = pdk.get_layer_tile_width(layer)
     cmd = ["-zz", "-r", _get_script_path(pdk, "export.py"), "-rd", f"output_path={output_path}",
            "-rd", f"layer_name={layer}", "-rd", f"tile_width={tile_width}", str(filename)]
-    if core_size:
-        cmd += ["-rd", f"core_size={','.join(map(str, core_size))}"]
     _run(cmd)
 
 

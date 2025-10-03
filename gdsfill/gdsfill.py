@@ -63,7 +63,7 @@ def _fill_layer(layer, pdk, args, tmpdirname):
     console = Console(color_system=None)
 
     with Live("Exporting tiles ...\n", console=console, refresh_per_second=4) as live:
-        export_layer(pdk, args.input, output_path, layer, args.core_size)
+        export_layer(pdk, args.input, output_path, layer)
         live.update("Exporting tiles ... done\n")
 
     tiles = open_yaml(output_path / "tiles.yaml")
@@ -99,8 +99,7 @@ def _fill_layer(layer, pdk, args, tmpdirname):
                 file = output_path / "modified" / f"tile_{tile}.gds"
                 queue = Queue()
                 proc = Process(target=fill_layer,
-                               args=(pdk, file, layer, queue, tiles,
-                                     Tile(values['x'], values['y'])))
+                               args=(pdk, file, layer, queue, Tile(values['x'], values['y'])))
                 procs_fill[start + idx] = {
                     'tile': tile.replace('_', 'x'),
                     'queue': queue,
@@ -215,8 +214,6 @@ def arguments():
     fill.add_argument('--keep-data', action=argparse.BooleanOptionalAction)
     fill.add_argument('--dry-run', action=argparse.BooleanOptionalAction)
     fill.add_argument('--config-file', type=is_valid_file)
-    fill.add_argument('--core-size', type=float, nargs=4, metavar=('llx', 'lly', 'urx', 'ury'),
-                      help="lower left (x, y) and upper right (x, y) points of the chip core.")
     fill.add_argument('--max-processes', type=int, default=cpu_count(),
                       help="Limits the number of processes for preparing and filling tiles. "
                       "Defaults to the available CPU cores.")

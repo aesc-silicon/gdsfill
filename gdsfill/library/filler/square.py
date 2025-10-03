@@ -80,16 +80,16 @@ class SquareParameter:
 
 
 # pylint: disable=unused-argument
-def fill_square(pdk, layer: str, tiles, tile, annotated_cell):
+def fill_square(pdk, layer: str, tile, annotated_cell, fill_density: float):
     """
     Place square fillers in a tile until density is within limits.
 
     Args:
         pdk (object): Provides layer rules.
         layer (str): Target layer.
-        tiles (dict): Tiling information.
         tile (object): Current tile instance.
         annotated_cell (gdstk.Cell): Cell to update.
+        fill_density (float): Density of the existing filler cells in this tile.
 
     Returns:
         gdstk.Cell: Cell containing inserted filler polygons.
@@ -104,7 +104,7 @@ def fill_square(pdk, layer: str, tiles, tile, annotated_cell):
     size = (min_size, max_size)
     space = (min_space, max_space)
     position = (start_size, start_space)
-    density = calculate_density(annotated_cell)
+    density = calculate_density(annotated_cell) + fill_density
     max_depth = pdk.get_layer_max_depth(layer)
 
     parameter = SquareParameter(size=size, space=space, position=position, density=density,
