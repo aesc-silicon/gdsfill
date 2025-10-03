@@ -76,15 +76,15 @@ class OverlapParameter:
 
 
 # pylint: disable=unused-argument
-def fill_overlap(pdk, layer: str, tiles, tile, annotated_cell):
+def fill_overlap(pdk, layer: str, tile, annotated_cell, fill_density: float):
     """Generate overlap filler polygons for a given layer.
 
     Args:
         pdk: Process design kit providing fill rules and layer info.
         layer (str): Target layer name.
-        tiles: Collection of tiles (unused placeholder).
         tile: Current tile being processed (unused placeholder).
         annotated_cell: GDS cell with annotations for placement and keep-out.
+        fill_density (float): Density of the existing filler cells in this tile.
 
     Returns:
         tuple[gdstk.Cell, str]: Cell containing filler polygons and fill result.
@@ -93,7 +93,7 @@ def fill_overlap(pdk, layer: str, tiles, tile, annotated_cell):
     max_depth = pdk.get_layer_max_depth(layer)
     max_size = fill_rules['max_width']
 
-    density = calculate_density(annotated_cell)
+    density = calculate_density(annotated_cell) + fill_density
 
     references = []
     for poly in get_polygons(annotated_cell, 'reference'):

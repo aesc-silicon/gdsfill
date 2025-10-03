@@ -20,7 +20,7 @@ ALGOS = {
 
 
 # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
-def fill_layer(pdk, inputfile, layer, queue, tiles, tile):
+def fill_layer(pdk, inputfile, layer, queue, tile):
     """
     Fill a layout layer to meet density requirements.
 
@@ -32,7 +32,6 @@ def fill_layer(pdk, inputfile, layer, queue, tiles, tile):
         inputfile (Path | str): Path to the input GDS file.
         layer (str): Target layer name.
         queue (Queue): Queue object to return results.
-        tiles (dict): Tiling information for the layout.
         tile (object): Current tile instance.
 
     Returns:
@@ -60,7 +59,8 @@ def fill_layer(pdk, inputfile, layer, queue, tiles, tile):
     if metal_density < desired_density:
         fills = []
         for fill_algo in fill_algos:
-            fill_cell, result = ALGOS[fill_algo](pdk, layer, tiles, tile, annotated_cell)
+            fill_cell, result = ALGOS[fill_algo](pdk, layer, tile, annotated_cell,
+                                                 sum(fill for _, fill in fills))
             fill_lib.add(fill_cell)
             fills.append((fill_algo, result))
         final_fill = round(metal_density + sum(fill for _, fill in fills), 2)
