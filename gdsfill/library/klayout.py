@@ -7,9 +7,24 @@ for runtime definitions).
 """
 import subprocess
 import re
+import os
+import platform
 from pathlib import Path
 from typing import List
 from packaging.version import Version
+
+
+def _get_env() -> dict:
+    """
+    Returns all environment variables and appends KLAYOUT_PYTHONPATH when a virtual environment
+    is active, pointing to its location.
+    """
+    env = os.environ.copy()
+    if 'VIRTUAL_ENV' in env:
+        major, minor, _ = platform.python_version_tuple()
+        path = f"lib/python{major}.{minor}/site-packages"
+        env['KLAYOUT_PYTHONPATH'] = Path(env['VIRTUAL_ENV']).resolve() / path
+    return env
 
 
 def _run(commands: List[str]):
@@ -30,7 +45,7 @@ def _run(commands: List[str]):
         - Prints the stderr output if the command fails.
     """
     cmd = ["klayout"] + commands
-    result = subprocess.run(cmd, check=False, capture_output=True)
+    result = subprocess.run(cmd, check=False, capture_output=True, env=_get_env())
     if result.returncode != 0:
         print(f"Command: {' '.join(cmd)}")
         print(result.stderr.decode('utf-8').rstrip('\n'))
@@ -51,7 +66,7 @@ def _popen(commands: List[str]):
         which can be used to interact with or wait for the process.
     """
     cmd = ["klayout"] + commands
-    return subprocess.Popen(cmd)
+    return subprocess.Popen(cmd, env=_get_env())
 
 
 def _get_script_path(pdk, script_name: str) -> str:
