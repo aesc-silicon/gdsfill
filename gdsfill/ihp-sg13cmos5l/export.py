@@ -143,8 +143,6 @@ def get_activ(layout, design_cell, tmp_cell, layer_number: int):
     """
     metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(layer_number, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(metal.merged())
-    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
-    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
     gatpoly = pya.Region(design_cell.begin_shapes_rec(layout.layer(5, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("keep_away_1"))).insert(gatpoly)
     cont = pya.Region(design_cell.begin_shapes_rec(layout.layer(6, 0)))
@@ -175,8 +173,6 @@ def get_gatpoly(layout, design_cell, tmp_cell, layer_number: int):
     tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(metal.merged())
     activ_filler = pya.Region(design_cell.begin_shapes_rec(layout.layer(1, 22)))
     tmp_cell.shapes(layout.layer(*get_layer("reference"))).insert(activ_filler)
-    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
-    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
     gatpoly = pya.Region(design_cell.begin_shapes_rec(layout.layer(5, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("keep_away_1"))).insert(gatpoly)
     cont = pya.Region(design_cell.begin_shapes_rec(layout.layer(6, 0)))
@@ -210,8 +206,6 @@ def get_metal(layout, design_cell, tmp_cell, layer_number: int) -> None:
     """
     metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(layer_number, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(metal.merged())
-    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
-    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
 
     placement_cell = get_core_area(layout, design_cell)
     tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(placement_cell)
@@ -231,8 +225,6 @@ def get_topmetal(layout, design_cell, tmp_cell, layer_number: int) -> None:
     """
     top_metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(layer_number, 0)))
     tmp_cell.shapes(layout.layer(*get_layer("drawing"))).insert(top_metal.merged())
-    trans = pya.Region(design_cell.begin_shapes_rec(layout.layer(26, 0)))
-    tmp_cell.shapes(layout.layer(*get_layer("keep_away_0"))).insert(trans)
 
     placement_cell = get_core_area(layout, design_cell)
     tmp_cell.shapes(layout.layer(*get_layer("placement_core"))).insert(placement_cell)
@@ -248,9 +240,7 @@ FUNC_MAPPING = {
     "Metal2": get_metal,
     "Metal3": get_metal,
     "Metal4": get_metal,
-    "Metal5": get_metal,
     "TopMetal1": get_topmetal,
-    "TopMetal2": get_topmetal,
 }
 
 FUNC_BORDER_MAPPING = {
@@ -260,9 +250,7 @@ FUNC_BORDER_MAPPING = {
     "Metal2": get_metal_border,
     "Metal3": get_metal_border,
     "Metal4": get_metal_border,
-    "Metal5": get_metal_border,
     "TopMetal1": get_topmetal_border,
-    "TopMetal2": get_topmetal_border,
 }
 
 

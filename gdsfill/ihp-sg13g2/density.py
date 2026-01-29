@@ -1,3 +1,4 @@
+# pylint:disable=duplicate-code
 """
 Density report generator for GDSII layouts in KLayout.
 

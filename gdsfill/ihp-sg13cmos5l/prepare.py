@@ -76,10 +76,6 @@ def prepare_activ(top_cell):
 
     AFil_d = AFil_d_a + AFil_d_b
 
-    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
-    AFil_e = trans.sized(1.0 * DB2NM)
-    del trans
-
     pwell_block = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_5"))))
     AFil_i = pwell_block.sized(1.5 * DB2NM) - pwell_block.sized(-1.5 * DB2NM)
     del pwell_block
@@ -87,7 +83,7 @@ def prepare_activ(top_cell):
     nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
     tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
 
-    keep_out = nofill + tile_border + AFil_c + AFil_c1 + AFil_d + AFil_e + AFil_i
+    keep_out = nofill + tile_border + AFil_c + AFil_c1 + AFil_d + AFil_i
     top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
@@ -128,14 +124,10 @@ def prepare_gatpoly(top_cell):
     del nblulay
     GFil_e = GFil_e_a + GFil_e_b
 
-    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
-    GFil_f = trans.sized(1.1 * DB2NM)
-    del trans
-
     nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
     tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
 
-    keep_out = nofill + tile_border + GFil_d + GFil_e + GFil_f
+    keep_out = nofill + tile_border + GFil_d + GFil_e
     top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
@@ -161,14 +153,10 @@ def prepare_metal(top_cell):
     MxFil_c = drawing.sized(0.42 * DB2NM)
     del drawing
 
-    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
-    MxFil_d = trans.sized(1.0 * DB2NM)
-    del trans
-
     nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
     tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
 
-    keep_out = nofill + tile_border + MxFil_b + MxFil_c + MxFil_d
+    keep_out = nofill + tile_border + MxFil_b + MxFil_c
     top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
@@ -198,14 +186,10 @@ def prepare_topmetal(top_cell):
     TMxFil_c = drawing.sized(3.0 * DB2NM)
     del drawing
 
-    trans = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("keep_away_0"))))
-    TMxFil_d = trans.sized(4.9 * DB2NM)
-    del trans
-
     nofill = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("nofill_area"))))
     tile_border = pya.Region(top_cell.begin_shapes_rec(layout.layer(*get_layer("tile_border"))))
 
-    keep_out = nofill + tile_border + TMxFil_b + TMxFil_c + TMxFil_d
+    keep_out = nofill + tile_border + TMxFil_b + TMxFil_c
     top_cell.shapes(layout.layer(*get_layer("keep_out"))).insert(keep_out.merged())
 
 
@@ -216,9 +200,7 @@ FUNC_MAPPING = {
   'Metal2': prepare_metal,
   'Metal3': prepare_metal,
   'Metal4': prepare_metal,
-  'Metal5': prepare_metal,
   'TopMetal1': prepare_topmetal,
-  'TopMetal2': prepare_topmetal,
 }
 
 

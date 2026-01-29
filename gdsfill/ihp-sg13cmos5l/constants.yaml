@@ -1,0 +1,103 @@
+DB2NM: 1000
+tile_width: 800
+minimum_klayout: 0.29.12
+layers:
+  Activ:
+    index: 1
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      # Make sure GFil.b + 2x GFil.j fit into one square
+      min_width: 1.06
+      # Allow min. GatPoly:filler extension over Activ:filler (0.18um)
+      max_width: 4.63
+      # Prevent GFil.c with enough space between two squares
+      min_space: 1.8
+      max_space: 10.0
+      clipping: false
+  GatPoly:
+    index: 5
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Overlap:
+      min_width: 0.7
+      max_width: 5.0
+      min_extension: 0.18
+      min_space: 0.8
+  Metal1:
+    index: 8
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+  Metal2:
+    index: 10
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+    Track:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+      orientation: vertical
+      gaps: 0.48
+      cell_height: 1.26
+      aggressive_fill: true
+  Metal3:
+    index: 30
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+    Track:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+      orientation: horizontal
+      gaps: 0.42
+      cell_height: 1.26
+  Metal4:
+    index: 50
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+    Track:
+      min_width: 1.0
+      max_width: 5.0
+      min_space: 0.42
+      max_space: 10.0
+      orientation: vertical
+      gaps: 0.48
+      cell_height: 1.26
+  TopMetal1:
+    index: 126
+    drawing: 0
+    fill: 22
+    max_depth: 10
+    Square:
+      min_width: 5.0
+      max_width: 10.0
+      min_space: 3.0
+      max_space: 10.0

@@ -1,3 +1,4 @@
+# pylint:disable=duplicate-code
 """
 Merge filled tiles into the active GDSII layout in KLayout.
 
