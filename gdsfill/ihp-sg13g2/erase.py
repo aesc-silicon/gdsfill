@@ -1,3 +1,4 @@
+# pylint:disable=duplicate-code
 """
 Erase dummy fill layers from an active GDSII layout in KLayout.
 
