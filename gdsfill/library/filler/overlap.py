@@ -7,7 +7,6 @@ The algorithm iteratively adjusts filler dimensions until the target
 density is reached or the maximum recursion depth is exceeded.
 """
 # pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
-import math
 import itertools
 from dataclasses import dataclass
 from typing import Tuple
@@ -19,7 +18,8 @@ from gdsfill.library.filler.helper import (
     get_box_dimension,
     get_cell_distance,
     get_center_point,
-    get_polygons
+    get_polygons,
+    snap_to_grid
 )
 
 
@@ -109,7 +109,7 @@ def fill_overlap(pdk, layer: str, tile, annotated_cell, fill_density: float):
         if cell_distance < 10:
             break
 
-    cell_distance = round(math.ceil(((cell_distance / 2) - 0.81) / 0.005) * 0.005, 3)
+    cell_distance = snap_to_grid((cell_distance / 2) - 0.81)
 
     step = max_size / max_depth
     step = 0.5
