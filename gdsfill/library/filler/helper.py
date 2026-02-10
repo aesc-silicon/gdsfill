@@ -162,10 +162,10 @@ def create_polygon(center: tuple[float, float], width: float, height: float):
     Returns:
         list[tuple[float, float]]: List of four corner points (clockwise).
     """
-    cx = round(math.ceil(center[0] / 0.005) * 0.005, 3)
-    cy = round(math.ceil(center[1] / 0.005) * 0.005, 3)
-    hh = round(math.ceil((height / 2) / 0.005) * 0.005, 3)
-    hw = round(math.ceil((width / 2) / 0.005) * 0.005, 3)
+    cx = snap_to_grid(center[0])
+    cy = snap_to_grid(center[1])
+    hh = snap_to_grid(height / 2)
+    hw = snap_to_grid(width / 2)
     return [
         (cx - hw, cy - hh),
         (cx + hw, cy - hh),
@@ -263,7 +263,7 @@ def get_track_offset(tracks, tile_x: float, gap: float) -> float:
     off = [round((get_center_point(p.points)[0] - tile_x) % gap, 3) for p in tracks if p.size == 8]
     if not (most_common := Counter(off).most_common(1)):
         return None
-    return round(math.ceil(most_common[0][0] / 0.005) * 0.005, 3)
+    return snap_to_grid(most_common[0][0])
 
 
 def get_polygons(cell, layer):
@@ -340,6 +340,20 @@ def node_direction(p1, p2, p3):
     vx, vy = p3[0] - p2[0], p3[1] - p2[1]
     cross = ux * vy - uy * vx
     return NodeDirection.CCW if cross > 0 else NodeDirection.CW
+
+
+def snap_to_grid(value, digits=3):
+    """
+    Snap a floating-point value upward to the nearest grid increment of 0.005.
+    The function ceils the value to the next multiple of 0.005 and then rounds
+    the result to avoid floating-point precision artifacts.
+    Args:
+        value (float): The value to snap to the grid.
+        digits (int): Number of decimal places to round to. Defaults to 3.
+    Returns:
+        float: The value snapped up to the nearest 0.005 increment.
+    """
+    return round(math.ceil(value / 0.005) * 0.005, digits)
 
 
 # pylint: disable=too-many-locals

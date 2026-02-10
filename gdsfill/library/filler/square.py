@@ -15,7 +15,8 @@ from gdsfill.library.filler.helper import (
     check_is_square,
     get_polygons,
     get_box_dimension,
-    midpoint_snapped
+    midpoint_snapped,
+    snap_to_grid
 )
 
 
@@ -192,7 +193,7 @@ def _fill_square_logic(pdk, layer: str, tile, annotated_cell, square_size: float
 
     tile_width = pdk.get_layer_tile_width(layer)
     filler = lib.new_cell('FILLER')
-    drift = round(((square_size + space) / 2) / 0.005) * 0.005
+    drift = snap_to_grid((square_size + space) / 2)
     for x in range(0, int(tile_width / offset)):
         for y in range(0, int(tile_width / offset)):
             square_offset = drift if x % 2 else 0
