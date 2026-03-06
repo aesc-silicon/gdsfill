@@ -2,7 +2,7 @@ PDK: ihp-sg13g2
 layers:
   Activ:
     algorithm: Square
-    density: 45
+    density: 50
     deviation: 5
     tile_width: 400
   GatPoly:
