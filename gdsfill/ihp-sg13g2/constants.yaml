@@ -9,7 +9,7 @@ layers:
     max_depth: 10
     Square:
       # Make sure GFil.b + 2x GFil.j fit into one square
-      min_width: 1.06
+      min_width: 1.08
       # Allow min. GatPoly:filler extension over Activ:filler (0.18um)
       max_width: 4.63
       # Prevent GFil.c with enough space between two squares
