@@ -148,8 +148,10 @@ def print_density(pdk, inputfile):
     Output:
         Prints per-layer density percentages to stdout.
     """
+    layers = ",".join(pdk.get_layer_names())
     file_ = Path(inputfile)
-    result = _run(["-zz", "-r", _get_script_path(pdk, "density.py"), str(file_)])
+    result = _run(["-zz", "-r", _get_script_path(pdk, "density.py"), "-rd", f"layers={layers}",
+                   str(file_)])
     print(result.stdout.decode('utf-8').rstrip('\n'))
 
 
@@ -164,8 +166,9 @@ def erase_fill(pdk, inputfile):
     Notes:
         Clears all shapes from fill layers as defined by the PDK.
     """
+    layers = ",".join(pdk.get_layer_names())
     file_ = Path(inputfile)
-    _run(["-zz", "-r", _get_script_path(pdk, "erase.py"), str(file_)])
+    _run(["-zz", "-r", _get_script_path(pdk, "erase.py"), "-rd", f"layers={layers}", str(file_)])
 
 
 def merge_tile(pdk, inputfile, output_path, tiles_file):

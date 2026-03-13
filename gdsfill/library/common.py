@@ -73,6 +73,15 @@ class PdkInformation:
         """
         return self.data['layers'].items()
 
+    def get_layer_names(self):
+        """
+        Get the names of all configured layers for this PDK.
+
+        Returns:
+            KeysView[str]: Layer names.
+        """
+        return self.data['layers'].keys()
+
     def get_layer(self, layer: str) -> dict:
         """
         Get configuration details for a specific layer.

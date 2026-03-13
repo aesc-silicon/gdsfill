@@ -221,10 +221,12 @@ def arguments():
 
     erase = subparsers.add_parser('erase', help='Erase dummy metal from chip')
     erase.add_argument("input", type=is_valid_file)
+    erase.add_argument('--config-file', type=is_valid_file)
     erase.set_defaults(func=func_erase)
 
     density = subparsers.add_parser('density', help='Calculate density for each layer')
     density.add_argument("input", type=is_valid_file)
+    density.add_argument('--config-file', type=is_valid_file)
     density.set_defaults(func=func_density)
 
     return parser.parse_args()
