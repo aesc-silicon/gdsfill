@@ -11,8 +11,18 @@ The layer mapping (indices, drawing, fill) is read from
 as this script.
 """
 from pathlib import Path
+import sys
 import pya
 import yaml
+
+try:
+    layers  # pylint: disable=used-before-assignment
+except NameError:
+    print("Missing layers argument. Please define '-rd layers=<layer1,layer2>'")
+    sys.exit(1)
+
+# pylint: disable=undefined-variable
+selected_layers = layers.split(',')  # noqa: F821
 
 script = Path(__file__).parent.resolve()
 content = (script / "constants.yaml").read_text(encoding='utf-8')
@@ -24,6 +34,9 @@ design_cell = layout.top_cell()
 edgeseal = pya.Region(design_cell.begin_shapes_rec(layout.layer(39, 0))).merged()
 density_area = (edgeseal + edgeseal.holes()).area()
 for layer, data in constants['layers'].items():
+    if layer not in selected_layers:
+        continue
+
     metal = pya.Region(design_cell.begin_shapes_rec(layout.layer(data['index'], data['drawing'])))
     fill = pya.Region(design_cell.begin_shapes_rec(layout.layer(data['index'], data['fill'])))
 
