@@ -42,4 +42,6 @@ gdsfill = [
     "configs/*.yaml",
     "ihp-sg13g2/*yaml",
     "ihp-sg13g2/*py",
+    "ihp-sg13cmos5l/*yaml",
+    "ihp-sg13cmos5l/*py",
 ]
