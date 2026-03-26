@@ -19,6 +19,11 @@ import yaml
 from packaging.version import Version
 
 
+class PdkNotSupportedError(Exception):
+    """Exception raised when an unsupported PDK is specified."""
+    pass
+
+
 class PdkInformation:
     """
     Accessor for PDK configuration and constants.
@@ -43,8 +48,13 @@ class PdkInformation:
                                        If None, defaults to `configs/<process>.yaml`.
         """
         script = Path(__file__).parent.parent.resolve()
-        self.data = open_yaml(config_file if config_file else script / f"configs/{process}.yaml")
-        self.constants = open_yaml(script / process / "constants.yaml")
+        try:
+            if config_file is None:
+                config_file = script / f"configs/{process}.yaml"
+            self.data = open_yaml(config_file)
+            self.constants = open_yaml(script / process / "constants.yaml")
+        except FileNotFoundError as e:
+            raise PdkNotSupportedError(f"PDK configuration not found {e.filename}") from e
 
     def get_minimum_klayout_version(self):
         """
@@ -248,7 +258,5 @@ def open_yaml(yamlfile: Path):
     Returns:
         dict or bool: Parsed YAML content, or False if the file does not exist.
     """
-    if not yamlfile.exists():
-        return False
     content = Path(yamlfile).read_text(encoding='utf-8')
     return yaml.safe_load(content)
