@@ -37,7 +37,7 @@ from gdsfill.library.fill import fill_layer
 
 # pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
 # pylint: disable=too-many-branches, too-many-statements
-def _fill_layer(input, layer, pdk, tmpdirname, *, max_processes=cpu_count(), dry_run=False):
+def _fill_layer(input_gds, layer, pdk, tmpdirname, *, max_processes=cpu_count(), dry_run=False):
     """
     Run the fill pipeline for a single layer.
 
@@ -64,7 +64,7 @@ def _fill_layer(input, layer, pdk, tmpdirname, *, max_processes=cpu_count(), dry
     console = Console(color_system=None)
 
     with Live("Exporting tiles ...\n", console=console, refresh_per_second=4) as live:
-        export_layer(pdk, input, output_path, layer)
+        export_layer(pdk, input_gds, output_path, layer)
         live.update("Exporting tiles ... done\n")
 
     tiles = open_yaml(output_path / "tiles.yaml")
@@ -127,11 +127,11 @@ def _fill_layer(input, layer, pdk, tmpdirname, *, max_processes=cpu_count(), dry
         print("--dry-run enabled: skipping merge step\n")
     else:
         with Live("Merging tiles ...\n", console=console, refresh_per_second=4) as live:
-            merge_tile(pdk, input, output_path / "filled", output_path / "tiles.yaml")
+            merge_tile(pdk, input_gds, output_path / "filled", output_path / "tiles.yaml")
             live.update("Merging tiles ... done\n")
 
 
-def fill(input, pdk, *, keep_data=False, dry_run=False, max_processes=cpu_count()):
+def fill(input_gds, pdk, *, keep_data=False, dry_run=False, max_processes=cpu_count()):
     """
     Insert dummy fill into each layer of a GDS file.
 
@@ -143,14 +143,15 @@ def fill(input, pdk, *, keep_data=False, dry_run=False, max_processes=cpu_count(
         None
     """
     if keep_data:
-        tmpdirname = Path.cwd() / "gdsfill-tmp" / input.stem.split('.')[0]
+        tmpdirname = Path.cwd() / "gdsfill-tmp" / input_gds.stem.split('.')[0]
         print(f"Data are stored in {tmpdirname}")
         for layer, _ in pdk.get_layers():
-            _fill_layer(input, layer, pdk, tmpdirname, dry_run=dry_run, max_processes=max_processes)
+            _fill_layer(input_gds, layer, pdk, tmpdirname, dry_run=dry_run,
+                        max_processes=max_processes)
     else:
         with tempfile.TemporaryDirectory(prefix='gdsfill-') as tmpdirname:
             for layer, _ in pdk.get_layers():
-                _fill_layer(input, layer, pdk, tmpdirname, dry_run=dry_run,
+                _fill_layer(input_gds, layer, pdk, tmpdirname, dry_run=dry_run,
                             max_processes=max_processes)
 
 
@@ -162,7 +163,8 @@ def func_fill(args, pdk):
         args (Namespace): Parsed CLI arguments.
         pdk (PdkInformation): PDK instance with layer rules.
     """
-    fill(args.input, pdk, keep_data=args.keep_data, dry_run=args.dry_run, max_processes=args.max_processes)
+    fill(args.input, pdk, keep_data=args.keep_data, dry_run=args.dry_run,
+         max_processes=args.max_processes)
 
 
 def func_density(args, pdk):
@@ -222,25 +224,25 @@ def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--process", default="ihp-sg13g2")
     subparsers = parser.add_subparsers(help='subcommand help')
-    fill = subparsers.add_parser('fill', help='Fill chip with dummy metal')
-    fill.add_argument("input", type=is_valid_file)
-    fill.add_argument('--keep-data', action=argparse.BooleanOptionalAction)
-    fill.add_argument('--dry-run', action=argparse.BooleanOptionalAction)
-    fill.add_argument('--config-file', type=is_valid_file)
-    fill.add_argument('--max-processes', type=int, default=cpu_count(),
-                      help="Limits the number of processes for preparing and filling tiles. "
-                      "Defaults to the available CPU cores.")
-    fill.set_defaults(func=func_fill)
+    parser_fill = subparsers.add_parser('fill', help='Fill chip with dummy metal')
+    parser_fill.add_argument("input", type=is_valid_file)
+    parser_fill.add_argument('--keep-data', action=argparse.BooleanOptionalAction)
+    parser_fill.add_argument('--dry-run', action=argparse.BooleanOptionalAction)
+    parser_fill.add_argument('--config-file', type=is_valid_file)
+    parser_fill.add_argument('--max-processes', type=int, default=cpu_count(),
+                             help="Limits the number of processes for preparing and filling tiles. "
+                             "Defaults to the available CPU cores.")
+    parser_fill.set_defaults(func=func_fill)
 
-    erase = subparsers.add_parser('erase', help='Erase dummy metal from chip')
-    erase.add_argument("input", type=is_valid_file)
-    erase.add_argument('--config-file', type=is_valid_file)
-    erase.set_defaults(func=func_erase)
+    parser_erase = subparsers.add_parser('erase', help='Erase dummy metal from chip')
+    parser_erase.add_argument("input", type=is_valid_file)
+    parser_erase.add_argument('--config-file', type=is_valid_file)
+    parser_erase.set_defaults(func=func_erase)
 
-    density = subparsers.add_parser('density', help='Calculate density for each layer')
-    density.add_argument("input", type=is_valid_file)
-    density.add_argument('--config-file', type=is_valid_file)
-    density.set_defaults(func=func_density)
+    parser_density = subparsers.add_parser('density', help='Calculate density for each layer')
+    parser_density.add_argument("input", type=is_valid_file)
+    parser_density.add_argument('--config-file', type=is_valid_file)
+    parser_density.set_defaults(func=func_density)
 
     return parser.parse_args()
 
