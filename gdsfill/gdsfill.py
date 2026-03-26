@@ -37,7 +37,7 @@ from gdsfill.library.fill import fill_layer
 
 # pylint: disable=too-many-locals, too-many-arguments, too-many-positional-arguments
 # pylint: disable=too-many-branches, too-many-statements
-def _fill_layer(layer, pdk, args, tmpdirname):
+def _fill_layer(input, layer, pdk, tmpdirname, *, max_processes=cpu_count(), dry_run=False):
     """
     Run the fill pipeline for a single layer.
 
@@ -64,7 +64,7 @@ def _fill_layer(layer, pdk, args, tmpdirname):
     console = Console(color_system=None)
 
     with Live("Exporting tiles ...\n", console=console, refresh_per_second=4) as live:
-        export_layer(pdk, args.input, output_path, layer)
+        export_layer(pdk, input, output_path, layer)
         live.update("Exporting tiles ... done\n")
 
     tiles = open_yaml(output_path / "tiles.yaml")
@@ -74,9 +74,9 @@ def _fill_layer(layer, pdk, args, tmpdirname):
     procs_modify = {}
     with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
         tile_keys = list(tiles['tiles'].keys())
-        for step in range(0, math.ceil(len(tile_keys) / args.max_processes)):
-            start = step * args.max_processes
-            for idx, tile in enumerate(tile_keys[slice(start, start + args.max_processes)]):
+        for step in range(0, math.ceil(len(tile_keys) / max_processes)):
+            start = step * max_processes
+            for idx, tile in enumerate(tile_keys[slice(start, start + max_processes)]):
                 raw_tile = output_path / "raw" / f"tile_{tile}.gds"
                 proc = prepare_tile(pdk, raw_tile, layer)
                 procs_modify[start + idx] = {'tile': tile.replace('_', 'x'), 'pid': proc}
@@ -93,9 +93,9 @@ def _fill_layer(layer, pdk, args, tmpdirname):
     procs_fill = {}
     with Live("\n".join(lines), console=console, refresh_per_second=4) as live:
         tile_items = list(tiles['tiles'].items())
-        for step in range(0, math.ceil(len(tile_items) / args.max_processes)):
-            start = step * args.max_processes
-            items = tile_items[slice(start, start + args.max_processes)]
+        for step in range(0, math.ceil(len(tile_items) / max_processes)):
+            start = step * max_processes
+            items = tile_items[slice(start, start + max_processes)]
             for idx, (tile, values) in enumerate(items):
                 file = output_path / "modified" / f"tile_{tile}.gds"
                 queue = Queue()
@@ -123,17 +123,17 @@ def _fill_layer(layer, pdk, args, tmpdirname):
                         del procs_fill[idx]
 
     print()
-    if args.dry_run:
+    if dry_run:
         print("--dry-run enabled: skipping merge step\n")
     else:
         with Live("Merging tiles ...\n", console=console, refresh_per_second=4) as live:
-            merge_tile(pdk, args.input, output_path / "filled", output_path / "tiles.yaml")
+            merge_tile(pdk, input, output_path / "filled", output_path / "tiles.yaml")
             live.update("Merging tiles ... done\n")
 
 
-def func_fill(args, pdk):
+def fill(input, pdk, *, keep_data=False, dry_run=False, max_processes=cpu_count()):
     """
-    Subcommand: Insert dummy fill into each layer of a GDS file.
+    Insert dummy fill into each layer of a GDS file.
 
     Args:
         args (Namespace): Parsed CLI arguments.
@@ -142,15 +142,27 @@ def func_fill(args, pdk):
     Returns:
         None
     """
-    if args.keep_data:
-        tmpdirname = Path.cwd() / "gdsfill-tmp" / args.input.stem.split('.')[0]
+    if keep_data:
+        tmpdirname = Path.cwd() / "gdsfill-tmp" / input.stem.split('.')[0]
         print(f"Data are stored in {tmpdirname}")
         for layer, _ in pdk.get_layers():
-            _fill_layer(layer, pdk, args, tmpdirname)
+            _fill_layer(input, layer, pdk, tmpdirname, dry_run=dry_run, max_processes=max_processes)
     else:
         with tempfile.TemporaryDirectory(prefix='gdsfill-') as tmpdirname:
             for layer, _ in pdk.get_layers():
-                _fill_layer(layer, pdk, args, tmpdirname)
+                _fill_layer(input, layer, pdk, tmpdirname, dry_run=dry_run,
+                            max_processes=max_processes)
+
+
+def func_fill(args, pdk):
+    """
+    Subcommand wrapper for fill operation.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+        pdk (PdkInformation): PDK instance with layer rules.
+    """
+    fill(args.input, pdk, keep_data=args.keep_data, dry_run=args.dry_run, max_processes=args.max_processes)
 
 
 def func_density(args, pdk):
