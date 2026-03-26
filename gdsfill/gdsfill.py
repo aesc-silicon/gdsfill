@@ -214,9 +214,12 @@ def is_valid_file(value: str):
     raise argparse.ArgumentTypeError(f"File {value} doesn't exist!")
 
 
-def arguments():
+def arguments(args=None):
     """
     Define CLI arguments and subcommands.
+
+    Args:
+        args (list[str] | None): Argument list to parse. Defaults to sys.argv if None.
 
     Returns:
         argparse.Namespace: Parsed command-line arguments.
@@ -244,7 +247,7 @@ def arguments():
     parser_density.add_argument('--config-file', type=is_valid_file)
     parser_density.set_defaults(func=func_density)
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 
 def check_klayout_version(pdk):
