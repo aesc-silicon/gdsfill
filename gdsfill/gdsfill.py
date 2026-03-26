@@ -233,6 +233,20 @@ def arguments():
     return parser.parse_args()
 
 
+def check_klayout_version(pdk):
+    """
+    Check if the installed Klayout version meets the PDK's minimum requirement.
+
+    Args:
+        pdk (PdkInformation): PDK instance with version requirements.
+
+    Returns:
+        bool: True if compatible, False otherwise.
+    """
+    klayout_version = get_version()
+    return klayout_version >= pdk.get_minimum_klayout_version()
+
+
 def main():
     """
     Entry point for the gdsfill CLI.
@@ -250,8 +264,7 @@ def main():
         print(f"PDK not supported: {e}")
         return 1
 
-    klayout_version = get_version()
-    if klayout_version < pdk.get_minimum_klayout_version():
+    if not check_klayout_version(pdk):
         print(f"Please install Klayout {pdk.get_minimum_klayout_version()}")
         return 1
 
