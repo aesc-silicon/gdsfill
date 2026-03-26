@@ -10,6 +10,7 @@ import re
 import os
 import platform
 from pathlib import Path
+import sysconfig
 from typing import List
 from packaging.version import Version
 
@@ -24,6 +25,10 @@ def _get_env() -> dict:
         major, minor, _ = platform.python_version_tuple()
         path = f"lib/python{major}.{minor}/site-packages"
         env['KLAYOUT_PYTHONPATH'] = Path(env['VIRTUAL_ENV']).resolve() / path
+    else:
+        site_packages = sysconfig.get_path('purelib')
+        if site_packages:
+            env['KLAYOUT_PYTHONPATH'] = site_packages
     return env
 
 
