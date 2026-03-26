@@ -21,7 +21,6 @@ from packaging.version import Version
 
 class PdkNotSupportedError(Exception):
     """Exception raised when an unsupported PDK is specified."""
-    pass
 
 
 class PdkInformation:
