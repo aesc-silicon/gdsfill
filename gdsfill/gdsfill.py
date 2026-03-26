@@ -28,6 +28,7 @@ from gdsfill.library.klayout import (
 )
 from gdsfill.library.common import (
   PdkInformation,
+  PdkNotSupportedError,
   Tile,
   open_yaml
 )
@@ -243,7 +244,12 @@ def main():
         int: Exit code (0 on success, nonzero on error).
     """
     args = arguments()
-    pdk = PdkInformation(args.process, args.config_file if 'config_file' in args else None)
+    try:
+        pdk = PdkInformation(args.process, args.config_file if 'config_file' in args else None)
+    except PdkNotSupportedError as e:
+        print(f"PDK not supported: {e}")
+        return 1
+
     klayout_version = get_version()
     if klayout_version < pdk.get_minimum_klayout_version():
         print(f"Please install Klayout {pdk.get_minimum_klayout_version()}")
