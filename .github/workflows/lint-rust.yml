@@ -1,0 +1,23 @@
+name: Rust Code Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Make sure CI fails on all warnings, including Clippy lints
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Run Clippy
+      run: |
+        cargo clippy --all-targets --all-features
