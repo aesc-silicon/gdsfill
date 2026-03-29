@@ -1,0 +1,33 @@
+[package]
+name = "gdsfill"
+version = "0.1.5"
+edition = "2024"
+authors = ["Daniel Schultz <dnltz@aesc-silicon.de>"]
+description = "Open-source tool for inserting dummy metal fill into semiconductor layouts."
+license = "LGPL-2.1-or-later"
+readme = "src/README.md"
+repository = "https://github.com/aesc-silicon/gdsfill"
+keywords = ["gds", "eda", "vlsi", "fill", "layout"]
+categories = ["command-line-utilities", "science"]
+
+[profile.release]
+opt-level = 3        # maximum optimization
+lto = true           # link-time optimization across crates
+codegen-units = 1    # single codegen unit for better LTO
+strip = true         # strip debug symbols from binary
+
+[[bin]]
+name = "gdsfill"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+gds21 = "3.0.0-pre.2"
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
+flate2 = "1"
+anyhow = "1.0.102"
+gzp = "2.0.2"
+geo = "0.28"
+rayon = "1"
+i_overlay = "4.5.1"
