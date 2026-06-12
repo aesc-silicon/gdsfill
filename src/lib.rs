@@ -227,7 +227,14 @@ impl LayerMap {
         let struct_map: HashMap<&str, &GdsStruct> =
             lib.structs.iter().map(|s| (s.name.as_str(), s)).collect();
 
+        // `$$`-prefixed cells are tool artifacts (e.g. KLayout's
+        // `$$$CONTEXT_INFO$$$`, written when a cell is saved out of a library).
+        // They are not part of the real layout and may reference cells at stale
+        // positions/orientations, so ignore them both as reference sources and
+        // as flatten roots -- otherwise their placements (e.g. an extra,
+        // un-rotated seal ring) get duplicated into the flattened geometry.
         let referenced: HashSet<&str> = lib.structs.iter()
+            .filter(|s| !s.name.starts_with("$$"))
             .flat_map(|s| s.elems.iter())
             .filter_map(|e| match e {
                 GdsElement::GdsStructRef(r) => Some(r.name.as_str()),
@@ -237,7 +244,9 @@ impl LayerMap {
             .collect();
 
         let mut inner: HashMap<(i16, i16), Vec<Polygon<f64>>> = HashMap::new();
-        for top in lib.structs.iter().filter(|s| !referenced.contains(s.name.as_str())) {
+        for top in lib.structs.iter()
+            .filter(|s| !s.name.starts_with("$$") && !referenced.contains(s.name.as_str()))
+        {
             collect_all_recursive(top, &struct_map, needed, &AffineTransform::identity(), &mut inner);
         }
 
