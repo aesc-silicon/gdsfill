@@ -32,7 +32,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
     // Keepout builders read additional layers (e.g. GatPoly, Cont, NWell for IHP).
     match process.as_str() {
         "ihp-sg13g2" | "ihp-sg13cmos5l" =>
-            needed.extend(crate::pdk::ihp_sg13g2::needed_layers()),
+            needed.extend(crate::pdk::ihp_sg13::needed_layers()),
         _ => {}
     }
 
@@ -70,7 +70,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
     // Compute the digital core area used by Track fill (PDK-specific).
     let core_polys_all: Vec<geo::Polygon<f64>> = match process.as_str() {
         "ihp-sg13g2" | "ihp-sg13cmos5l" =>
-            crate::pdk::ihp_sg13g2::compute_core_area(&layer_map, dbu),
+            crate::pdk::ihp_sg13::compute_core_area(&layer_map, dbu),
         _ => vec![],
     };
 
@@ -134,7 +134,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
         let base_keepout: Vec<(Rect<f64>, geo::Polygon<f64>)> = {
             let polys: Vec<geo::Polygon<f64>> = match process.as_str() {
                 "ihp-sg13g2" | "ihp-sg13cmos5l" => {
-                    crate::pdk::ihp_sg13g2::build_keepout(&layer_map, name, layer, dbu)
+                    crate::pdk::ihp_sg13::build_keepout(&layer_map, name, layer, dbu)
                 }
                 _ => {
                     eprintln!("Warning: no keepout rules for process '{}', fill may overlap existing metal", process);
@@ -162,9 +162,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
         let keepout_polys_only: Vec<geo::Polygon<f64>> =
             base_keepout.iter().map(|(_, p)| p.clone()).collect();
         let tile_keepout_idx = build_tile_index(&keepout_polys_only, x_min, y_min, tile_size, nx, ny);
-        let avg_ko = if nx * ny > 0 {
-            tile_keepout_idx.iter().map(|v| v.len()).sum::<usize>() / (nx * ny)
-        } else { 0 };
+        let avg_ko = tile_keepout_idx.iter().map(|v| v.len()).sum::<usize>()
+            .checked_div(nx * ny)
+            .unwrap_or(0);
         println!("  {:<18} {:>8.2?}  ({} polys, avg {}/tile)",
             "index keepout:", t.elapsed(), base_keepout.len(), avg_ko);
 
@@ -212,203 +212,216 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
             .flat_map(|iy| (0..nx).map(move |ix| (ix, iy)))
             .collect();
 
-        struct TileStat {
-            ix: usize, iy: usize,
-            draw_area: f64, old_fill_area: f64, new_fill_area: f64, tile_area: f64,
-        }
+        // Geometry of tile (ix, iy): clipped rect and its area.
+        let tile_geom = |ix: usize, iy: usize| -> (Rect<f64>, f64) {
+            let tx0 = x_min + ix as f64 * tile_size;
+            let tx1 = (tx0 + tile_size).min(x_max);
+            let ty0 = y_min + iy as f64 * tile_size;
+            let ty1 = (ty0 + tile_size).min(y_max);
+            (Rect::new(coord!(x: tx0, y: ty0), coord!(x: tx1, y: ty1)), (tx1 - tx0) * (ty1 - ty0))
+        };
 
-        let t = Instant::now();
-        let tile_results: Vec<(Vec<GdsBoundary>, Vec<Rect<f64>>, TileStat)> = coords.par_iter()
-            .map(|&(ix, iy)| {
-                let tx0 = x_min + ix as f64 * tile_size;
-                let tx1 = (tx0 + tile_size).min(x_max);
-                let ty0 = y_min + iy as f64 * tile_size;
-                let ty1 = (ty0 + tile_size).min(y_max);
-                let tile = Rect::new(coord!(x: tx0, y: ty0), coord!(x: tx1, y: ty1));
-                let tile_area = (tx1 - tx0) * (ty1 - ty0);
-                let empty_stat = TileStat { ix, iy, draw_area: 0.0, old_fill_area: 0.0, new_fill_area: 0.0, tile_area };
-                if tile_area <= 0.0 { return (vec![], vec![], empty_stat); }
+        // Halo (in dbu) for cross-tile keepout visibility.  A fill owned by this
+        // tile can extend max_width/2 past the seam, and must clear keepout within
+        // min_space of that edge; keepout polys are already inflated by min_space,
+        // so max_width/2 + min_space is a safe (conservative) halo.
+        let halo_dbu: f64 = layer.algorithms.iter().map(|a| match a {
+            FillAlgorithm::Square(p)  => p.max_width / 2.0 + p.min_space,
+            FillAlgorithm::Track(p)   => p.max_width / 2.0 + p.min_space,
+            FillAlgorithm::Overlap(p) => p.max_width / 2.0 + p.min_space,
+        }).fold(0.0_f64, f64::max) / dbu;
 
-                let tile_poly = tile.to_polygon();
+        // Per-tile existing density (drawn + previously placed fill), computed once.
+        struct Existing { draw_area: f64, old_fill_area: f64, tile_area: f64 }
+        let existing: Vec<Existing> = coords.par_iter().map(|&(ix, iy)| {
+            let (tile, tile_area) = tile_geom(ix, iy);
+            if tile_area <= 0.0 {
+                return Existing { draw_area: 0.0, old_fill_area: 0.0, tile_area };
+            }
+            let tile_poly = tile.to_polygon();
+            let draw_candidates = &drawing_idx[iy * nx + ix];
+            let fill_candidates = &fill_idx[iy * nx + ix];
+            let draw_area = if merge_for_density {
+                tiled_merge_area(drawing_raw, draw_candidates, tile, merge_window_dbu)
+            } else {
+                clipped_area(drawing_raw, draw_candidates, &tile_poly)
+            };
+            let old_fill_area = clipped_area(fill_raw, fill_candidates, &tile_poly);
+            Existing { draw_area, old_fill_area, tile_area }
+        }).collect();
 
-                let draw_candidates = &drawing_idx[iy * nx + ix];
-                let fill_candidates = &fill_idx[iy * nx + ix];
-                let draw_area = if merge_for_density {
-                    tiled_merge_area(drawing_raw, draw_candidates, tile, merge_window_dbu)
-                } else {
-                    clipped_area(drawing_raw, draw_candidates, &tile_poly)
-                };
-                let old_fill_area = clipped_area(fill_raw, fill_candidates, &tile_poly);
-                let existing_pct = (draw_area + old_fill_area) / tile_area * 100.0;
+        // Uniform per-layer Square lattice (size, space) derived from the target.
+        let square_grid_params = layer.algorithms.iter().find_map(|a| {
+            if let FillAlgorithm::Square(sq) = a {
+                Some(square_grid(sq, target_density, dbu, pdk.grid_dbu))
+            } else { None }
+        });
 
-                let mut tile_keepout: Vec<(Rect<f64>, geo::Polygon<f64>)> =
-                    tile_keepout_idx[iy * nx + ix]
-                        .iter()
-                        .map(|&ki| base_keepout[ki].clone())
-                        .collect();
+        // Fills accumulated across this layer's algorithm passes.
+        let mut layer_fill_rects: Vec<Rect<f64>> = Vec::new();
+        let mut layer_boundaries: Vec<GdsBoundary> = Vec::new();
+        // New fill area placed per tile (summed across passes), for reporting and
+        // for the running density fed into Track/Overlap.
+        let mut tile_new_area: Vec<f64> = vec![0.0; nx * ny];
 
-                let mut running_pct = existing_pct;
-                let mut tile_boundaries: Vec<GdsBoundary> = Vec::new();
-                let mut tile_fill_rects: Vec<Rect<f64>> = Vec::new();
-                let mut new_fill_area = 0.0_f64;
+        let fill_t = Instant::now();
 
-                // Reject fills whose centre lies outside the chip boundary polygon.
-                // Needed for non-rectangular boundaries where bounding-box tiles
-                // extend into areas outside the actual sealring shape.
-                let inside_boundary = |r: &Rect<f64>| -> bool {
-                    if boundary_outer.is_empty() { return true; }
-                    let center = Point::new(
-                        (r.min().x + r.max().x) / 2.0,
-                        (r.min().y + r.max().y) / 2.0,
+        // Each algorithm runs as its own global parallel sweep.  Fills from earlier
+        // passes are indexed globally and fed (within the halo) as keepout to later
+        // passes, so cross-tile spacing between e.g. Track and Square fills holds.
+        for algo in &layer.algorithms {
+            let pass_min_space = match algo {
+                FillAlgorithm::Square(p)  => p.min_space,
+                FillAlgorithm::Track(p)   => p.min_space,
+                FillAlgorithm::Overlap(p) => p.min_space,
+            } / dbu;
+
+            // Earlier-pass fills, inflated by this pass's min_space, indexed for halo lookup.
+            let placed_ko: Vec<(Rect<f64>, geo::Polygon<f64>)> = layer_fill_rects.iter().map(|r| {
+                let e = Rect::new(
+                    coord!(x: r.min().x - pass_min_space, y: r.min().y - pass_min_space),
+                    coord!(x: r.max().x + pass_min_space, y: r.max().y + pass_min_space),
+                );
+                (e, e.to_polygon())
+            }).collect();
+            let placed_polys: Vec<geo::Polygon<f64>> =
+                placed_ko.iter().map(|(_, p)| p.clone()).collect();
+            let placed_idx = build_tile_index(&placed_polys, x_min, y_min, tile_size, nx, ny);
+
+            let pass: Vec<(Vec<GdsBoundary>, Vec<Rect<f64>>, f64)> = coords.par_iter()
+                .map(|&(ix, iy)| {
+                    let (tile, tile_area) = tile_geom(ix, iy);
+                    if tile_area <= 0.0 { return (vec![], vec![], 0.0); }
+
+                    // Expanded query rect for halo keepout gathering.
+                    let expanded = Rect::new(
+                        coord!(x: tile.min().x - halo_dbu, y: tile.min().y - halo_dbu),
+                        coord!(x: tile.max().x + halo_dbu, y: tile.max().y + halo_dbu),
                     );
-                    boundary_outer.iter().any(|bp| bp.contains(&center))
-                };
 
-                for algo in &layer.algorithms {
-                    let ctx = TileCtx {
+                    // Keepout = base (drawn metal etc.) + earlier-pass fills, both
+                    // gathered from the 3x3 tile neighbourhood within the halo.
+                    let mut tile_keepout = gather_keepout_halo(
+                        &base_keepout, &tile_keepout_idx, nx, ny, ix, iy, &expanded);
+                    tile_keepout.extend(gather_keepout_halo(
+                        &placed_ko, &placed_idx, nx, ny, ix, iy, &expanded));
+
+                    let e = &existing[iy * nx + ix];
+                    let running_pct = (e.draw_area + e.old_fill_area + tile_new_area[iy * nx + ix])
+                        / tile_area * 100.0;
+
+                    // Reject fills whose centre lies outside the chip boundary polygon.
+                    // Require the *entire* fill shape inside the chip outline, not
+                    // just its centre, so shapes never poke past the die edge.
+                    // Testing all four corners against one boundary polygon is exact
+                    // for convex outlines (e.g. seal rings) and prevents the fill
+                    // rim that was visible outside small designs.
+                    let inside_boundary = |r: &Rect<f64>| -> bool {
+                        if boundary_outer.is_empty() { return true; }
+                        let corners = [
+                            Point::new(r.min().x, r.min().y),
+                            Point::new(r.max().x, r.min().y),
+                            Point::new(r.min().x, r.max().y),
+                            Point::new(r.max().x, r.max().y),
+                        ];
+                        boundary_outer.iter().any(|bp| corners.iter().all(|c| bp.contains(c)))
+                    };
+
+                    let tctx = TileCtx {
                         running_pct, target_density, deviation,
                         dbu, tile_area, grid_dbu: pdk.grid_dbu,
                     };
-                    match algo {
-                        FillAlgorithm::Square(sq) => {
-                            let new_rects: Vec<Rect<f64>> = fill_square_tile(&tile, &tile_keepout, sq, &ctx)
-                                .into_iter().filter(|r| inside_boundary(r)).collect();
-                            if !new_rects.is_empty() {
-                                let min_space_dbu = sq.min_space / dbu;
-                                let added_area: f64 = new_rects.iter()
-                                    .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y))
-                                    .sum();
-                                tile_keepout.extend(new_rects.iter().map(|r| {
-                                    let e = Rect::new(
-                                        coord!(x: r.min().x - min_space_dbu, y: r.min().y - min_space_dbu),
-                                        coord!(x: r.max().x + min_space_dbu, y: r.max().y + min_space_dbu),
-                                    );
-                                    (e, e.to_polygon())
-                                }));
-                                running_pct  += added_area / tile_area * 100.0;
-                                new_fill_area += added_area;
-                                for r in new_rects {
-                                    tile_boundaries.push(rect_to_boundary(r, layer.gds_layer, layer.fill_datatype));
-                                    tile_fill_rects.push(r);
-                                }
-                            }
-                        }
 
+                    let new_rects: Vec<Rect<f64>> = match algo {
+                        FillAlgorithm::Square(_) => {
+                            let (size, space) = square_grid_params
+                                .expect("square grid params computed when a Square algo is present");
+                            fill_square_global(&tile, &tile_keepout, size, space, x_min, y_min)
+                                .into_iter().filter(|r| inside_boundary(r)).collect()
+                        }
                         FillAlgorithm::Overlap(op) => {
                             let tile_ref_rects: Vec<Rect<f64>> = ref_tile_idx[iy * nx + ix]
-                                .iter()
-                                .map(|&i| ref_rects_storage[i])
-                                .collect();
-                            let new_rects: Vec<Rect<f64>> = fill_overlap_tile(&tile_keepout, op, &tile_ref_rects, &ctx)
-                                .into_iter().filter(|r| inside_boundary(r)).collect();
-                            if !new_rects.is_empty() {
-                                let min_space_dbu = op.min_space / dbu;
-                                let added_area: f64 = new_rects.iter()
-                                    .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y))
-                                    .sum();
-                                tile_keepout.extend(new_rects.iter().map(|r| {
-                                    let e = Rect::new(
-                                        coord!(x: r.min().x - min_space_dbu, y: r.min().y - min_space_dbu),
-                                        coord!(x: r.max().x + min_space_dbu, y: r.max().y + min_space_dbu),
-                                    );
-                                    (e, e.to_polygon())
-                                }));
-                                new_fill_area += added_area;
-                                for r in new_rects {
-                                    tile_boundaries.push(rect_to_boundary(r, layer.gds_layer, layer.fill_datatype));
-                                    tile_fill_rects.push(r);
-                                }
-                            }
+                                .iter().map(|&i| ref_rects_storage[i]).collect();
+                            fill_overlap_tile(&tile_keepout, op, &tile_ref_rects, &tctx)
+                                .into_iter().filter(|r| inside_boundary(r)).collect()
                         }
-
                         FillAlgorithm::Track(tp) => {
                             let tile_core_polys: Vec<geo::Polygon<f64>> =
                                 core_tile_idx[iy * nx + ix]
-                                    .iter()
-                                    .map(|&i| core_polys_all[i].clone())
-                                    .collect();
-                            let new_rects: Vec<Rect<f64>> = fill_track_tile(
+                                    .iter().map(|&i| core_polys_all[i].clone()).collect();
+                            fill_track_tile(
                                 &tile, &tile_keepout, tp, &tile_core_polys,
-                                &ctx, track_phase_x, track_phase_y,
-                            ).into_iter().filter(|r| inside_boundary(r)).collect();
-                            if !new_rects.is_empty() {
-                                let min_space_dbu = tp.min_space / dbu;
-                                let added_area: f64 = new_rects.iter()
-                                    .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y))
-                                    .sum();
-                                tile_keepout.extend(new_rects.iter().map(|r| {
-                                    let e = Rect::new(
-                                        coord!(x: r.min().x - min_space_dbu, y: r.min().y - min_space_dbu),
-                                        coord!(x: r.max().x + min_space_dbu, y: r.max().y + min_space_dbu),
-                                    );
-                                    (e, e.to_polygon())
-                                }));
-                                running_pct  += added_area / tile_area * 100.0;
-                                new_fill_area += added_area;
-                                for r in new_rects {
-                                    tile_boundaries.push(rect_to_boundary(r, layer.gds_layer, layer.fill_datatype));
-                                    tile_fill_rects.push(r);
-                                }
-                            }
+                                &tctx, track_phase_x, track_phase_y,
+                            ).into_iter().filter(|r| inside_boundary(r)).collect()
                         }
-                    }
-                }
+                    };
 
-                let stat = TileStat { ix, iy, draw_area, old_fill_area, new_fill_area, tile_area };
-                (tile_boundaries, tile_fill_rects, stat)
-            })
-            .collect();
+                    let added_area: f64 = new_rects.iter()
+                        .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y)).sum();
+                    let boundaries: Vec<GdsBoundary> = new_rects.iter()
+                        .map(|r| rect_to_boundary(*r, layer.gds_layer, layer.fill_datatype))
+                        .collect();
+                    (boundaries, new_rects, added_area)
+                })
+                .collect();
 
-        let fill_elapsed = t.elapsed();
+            // Merge this pass into the layer accumulators.
+            for (t, (b, r, area)) in pass.into_iter().enumerate() {
+                let (ix, iy) = coords[t];
+                tile_new_area[iy * nx + ix] += area;
+                layer_boundaries.extend(b);
+                layer_fill_rects.extend(r);
+            }
+        }
 
-        // Store placed rects for reference by subsequent layers.
-        let layer_fill_rects: Vec<Rect<f64>> = tile_results.iter()
-            .flat_map(|(_, r, _)| r.iter().copied()).collect();
-        placed_rects.insert((layer.gds_layer, layer.fill_datatype), layer_fill_rects);
+        let fill_elapsed = fill_t.elapsed();
+        let layer_shapes = layer_boundaries.len();
 
-        let layer_shapes: usize = tile_results.iter().map(|(b, _, _)| b.len()).sum();
+        // Store placed rects for reference by subsequent layers (Overlap ref).
+        placed_rects.insert((layer.gds_layer, layer.fill_datatype), layer_fill_rects.clone());
 
         // Per-tile density table
-        for (_, _, s) in &tile_results {
-            if s.tile_area <= 0.0 { continue; }
-            let tx0 = x_min + s.ix as f64 * tile_size;
+        for &(ix, iy) in &coords {
+            let e = &existing[iy * nx + ix];
+            if e.tile_area <= 0.0 { continue; }
+            let new_area = tile_new_area[iy * nx + ix];
+            let tx0 = x_min + ix as f64 * tile_size;
             let tx1 = (tx0 + tile_size).min(x_max);
-            let ty0 = y_min + s.iy as f64 * tile_size;
+            let ty0 = y_min + iy as f64 * tile_size;
             let ty1 = (ty0 + tile_size).min(y_max);
-            let total = (s.draw_area + s.old_fill_area + s.new_fill_area) / s.tile_area * 100.0;
+            let total = (e.draw_area + e.old_fill_area + new_area) / e.tile_area * 100.0;
             println!(
                 "  Tile [{:2},{:2}] [({:8.1}, {:8.1}) - ({:8.1}, {:8.1}) µm]: \
                  draw {:5.1}%  old {:5.1}%  new {:5.1}% -> {:5.1}%",
-                s.ix, s.iy,
+                ix, iy,
                 tx0 * dbu, ty0 * dbu, tx1 * dbu, ty1 * dbu,
-                s.draw_area    / s.tile_area * 100.0,
-                s.old_fill_area / s.tile_area * 100.0,
-                s.new_fill_area / s.tile_area * 100.0,
+                e.draw_area     / e.tile_area * 100.0,
+                e.old_fill_area / e.tile_area * 100.0,
+                new_area        / e.tile_area * 100.0,
                 total,
             );
         }
 
         // Under-density tile summary
         let min_required = target_density - deviation;
-        let under: Vec<_> = tile_results.iter()
-            .filter(|(_, _, s)| {
-                if s.tile_area <= 0.0 { return false; }
-                let total = (s.draw_area + s.old_fill_area + s.new_fill_area) / s.tile_area * 100.0;
-                total < min_required
-            })
-            .collect();
+        let under: Vec<(usize, usize, f64)> = coords.iter().filter_map(|&(ix, iy)| {
+            let e = &existing[iy * nx + ix];
+            if e.tile_area <= 0.0 { return None; }
+            let total = (e.draw_area + e.old_fill_area + tile_new_area[iy * nx + ix])
+                / e.tile_area * 100.0;
+            (total < min_required).then_some((ix, iy, total))
+        }).collect();
         if !under.is_empty() {
             println!("  Under-density tiles ({} below {:.1}%):", under.len(), min_required);
-            for (_, _, s) in &under {
-                let tx0 = x_min + s.ix as f64 * tile_size;
+            for &(ix, iy, total) in &under {
+                let tx0 = x_min + ix as f64 * tile_size;
                 let tx1 = (tx0 + tile_size).min(x_max);
-                let ty0 = y_min + s.iy as f64 * tile_size;
+                let ty0 = y_min + iy as f64 * tile_size;
                 let ty1 = (ty0 + tile_size).min(y_max);
-                let total = (s.draw_area + s.old_fill_area + s.new_fill_area) / s.tile_area * 100.0;
                 println!(
                     "    Tile [{:2},{:2}] [({:8.1}, {:8.1}) - ({:8.1}, {:8.1}) µm]: \
                      {:.2}% (need {:.1}%, gap {:.3}%)",
-                    s.ix, s.iy,
+                    ix, iy,
                     tx0 * dbu, ty0 * dbu, tx1 * dbu, ty1 * dbu,
                     total, min_required, min_required - total,
                 );
@@ -416,16 +429,16 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
         }
 
         // Overall density for this layer
-        let tot_draw  : f64 = tile_results.iter().map(|(_, _, s)| s.draw_area).sum();
-        let tot_old   : f64 = tile_results.iter().map(|(_, _, s)| s.old_fill_area).sum();
-        let tot_new   : f64 = tile_results.iter().map(|(_, _, s)| s.new_fill_area).sum();
+        let tot_draw: f64 = existing.iter().map(|e| e.draw_area).sum();
+        let tot_old : f64 = existing.iter().map(|e| e.old_fill_area).sum();
+        let tot_new : f64 = tile_new_area.iter().sum();
         let da = density_area.max(1.0);  // avoid div-by-zero on tiny chips
         println!(
             "  Overall        draw {:5.2}%  old {:5.2}%  new {:5.2}%  -> {:5.2}%  \
              (target {:.0}% +/- {:.0}%)",
-            (tot_draw  / da * 100.0).max(0.0),
-            (tot_old   / da * 100.0).max(0.0),
-            (tot_new   / da * 100.0).max(0.0),
+            (tot_draw / da * 100.0).max(0.0),
+            (tot_old  / da * 100.0).max(0.0),
+            (tot_new  / da * 100.0).max(0.0),
             ((tot_draw + tot_old + tot_new) / da * 100.0).max(0.0),
             target_density, deviation,
         );
@@ -434,7 +447,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
         println!("  {:<18} {:>8.2?}  ({} shapes)", "fill:", fill_elapsed, layer_shapes);
         println!("  {:<18} {:>8.2?}", "layer total:", layer_t.elapsed());
 
-        all_new_boundaries.extend(tile_results.into_iter().flat_map(|(b, _, _)| b));
+        all_new_boundaries.extend(layer_boundaries);
         total_shapes += layer_shapes;
     }
 
@@ -490,90 +503,75 @@ struct TileCtx {
 
 // Square fill
 
-fn fill_square_tile(
-    tile: &Rect<f64>,
-    keepout: &[(Rect<f64>, geo::Polygon<f64>)],
-    sq: &crate::pdk::SquareParams,
-    ctx: &TileCtx,
-) -> Vec<Rect<f64>> {
-    let TileCtx { running_pct, target_density, deviation, dbu, tile_area, grid_dbu } = *ctx;
-    let fill_target_pct = target_density - running_pct;
-    if fill_target_pct <= deviation / 2.0 {
-        return vec![];
-    }
-
+/// Compute the uniform `(size, space)` of the per-layer Square lattice (in dbu)
+/// from the layer target density, snapped to the manufacturing grid.
+///
+/// Snapping to multiples of `2 * grid_dbu` keeps `half = size/2`, `pitch = size +
+/// space` and `drift = pitch/2` all on the grid, so every shape corner lands on a
+/// manufacturing-grid point regardless of which tile generated it.
+fn square_grid(sq: &crate::pdk::SquareParams, target_pct: f64, dbu: f64, grid_dbu: f64) -> (f64, f64) {
     let min_width_dbu = sq.min_width / dbu;
     let max_width_dbu = sq.max_width / dbu;
     let min_space_dbu = sq.min_space / dbu;
     let max_space_dbu = sq.max_space / dbu;
 
-    // Tile-edge keepout: inset all four sides by min_space so that fill shapes
-    // cannot violate the minimum-space rule against shapes in adjacent tiles.
-    let b = min_space_dbu;
-    let (x0, y0, x1, y1) = (tile.min().x, tile.min().y, tile.max().x, tile.max().y);
-    let edge_rects = [
-        Rect::new(coord!(x: x0,     y: y0), coord!(x: x0 + b, y: y1)),
-        Rect::new(coord!(x: x1 - b, y: y0), coord!(x: x1,     y: y1)),
-        Rect::new(coord!(x: x0,     y: y0), coord!(x: x1, y: y0 + b)),
-        Rect::new(coord!(x: x0,     y: y1 - b), coord!(x: x1, y: y1)),
-    ];
-    let mut local_keepout: Vec<(Rect<f64>, geo::Polygon<f64>)> = keepout.to_vec();
-    for r in &edge_rects {
-        local_keepout.push((*r, r.to_polygon()));
-    }
+    let (raw_size, raw_space) = analytical_params(
+        min_width_dbu, max_width_dbu, min_space_dbu, max_space_dbu, target_pct);
 
-    // Upper bound: densest grid achievable with given constraints.
-    let max_theoretical = (max_width_dbu / (max_width_dbu + min_space_dbu)).powi(2) * 100.0;
+    let g2 = 2.0 * grid_dbu;
+    let min_size_snapped  = (min_width_dbu / g2).ceil() * g2;
+    let min_space_snapped = (min_space_dbu / g2).ceil() * g2;
+    let size  = ((raw_size  / g2).round() * g2).max(min_size_snapped);
+    let space = ((raw_space / g2).round() * g2).max(min_space_snapped);
+    (size, space)
+}
 
-    // Binary-search on `effective_target`.  First iteration tries `fill_target_pct`
-    // directly (analytical approximation without keepout correction) -- this is
-    // often already within tolerance.  Subsequent iterations bisect [lo, hi].
-    let mut lo = fill_target_pct;
-    let mut hi = max_theoretical;
+/// Place squares from a global lattice anchored at `(anchor_x, anchor_y)`.
+///
+/// The lattice is identical for every tile, so fills in adjacent tiles form one
+/// continuous grid and are automatically `>= space` apart -- no per-tile edge
+/// inset is needed.  A cell is owned by the tile containing its centre (half-open
+/// `[min, max)` in each axis), so every cell is emitted exactly once.  Odd columns
+/// are staggered by `pitch/2`; the column parity is taken from the *global* column
+/// index so the checkerboard is continuous across tile seams.
+fn fill_square_global(
+    tile: &Rect<f64>,
+    keepout: &[(Rect<f64>, geo::Polygon<f64>)],
+    size: f64,
+    space: f64,
+    anchor_x: f64,
+    anchor_y: f64,
+) -> Vec<Rect<f64>> {
+    let pitch = size + space;
+    if pitch <= 0.0 { return vec![]; }
+    let half  = size / 2.0;
+    let drift = pitch / 2.0; // on-grid: pitch is a multiple of 2*grid_dbu
 
-    let mut best_rects: Vec<Rect<f64>> = Vec::new();
-    let mut best_diff = f64::INFINITY;
+    let (tx0, ty0, tx1, ty1) = (tile.min().x, tile.min().y, tile.max().x, tile.max().y);
 
-    for i in 0..6 {
-        let effective_target = if i == 0 { fill_target_pct } else { (lo + hi) / 2.0 };
-        let (raw_size, raw_space) = analytical_params(
-            min_width_dbu, max_width_dbu,
-            min_space_dbu, max_space_dbu,
-            effective_target,
-        );
-        // Snap size and space to multiples of 2*grid_dbu so that:
-        //   half = size/2  is a multiple of grid_dbu
-        //   pitch = size+space is a multiple of 2*grid_dbu
-        //   drift = pitch/2 is a multiple of grid_dbu
-        // This ensures every shape corner lands on the manufacturing grid.
-        let g2 = 2.0 * grid_dbu;
-        let min_size_snapped  = (min_width_dbu / g2).ceil() * g2;
-        let min_space_snapped = (min_space_dbu  / g2).ceil() * g2;
-        let size  = ((raw_size  / g2).round() * g2).max(min_size_snapped);
-        let space = ((raw_space / g2).round() * g2).max(min_space_snapped);
+    // Global column indices whose centre x falls in [tx0, tx1).
+    let col_min = ((tx0 - anchor_x - half) / pitch).ceil() as i64;
+    let col_max = ((tx1 - anchor_x - half) / pitch).ceil() as i64 - 1;
 
-        let rects = generate_fill(tile, &local_keepout, size, space, min_width_dbu, sq.clipping);
+    let mut out = Vec::new();
+    for col in col_min..=col_max {
+        let cx = anchor_x + half + col as f64 * pitch;
+        if cx < tx0 || cx >= tx1 { continue; }
+        let stagger = if col.rem_euclid(2) == 1 { drift } else { 0.0 };
 
-        let actual_pct = rects.iter()
-            .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y))
-            .sum::<f64>() / tile_area * 100.0;
-
-        let diff = (actual_pct - fill_target_pct).abs();
-        if diff < best_diff {
-            best_diff = diff;
-            best_rects = rects;
-        }
-
-        if actual_pct < fill_target_pct - deviation / 2.0 {
-            lo = effective_target; // too sparse -> denser grid needed
-        } else if actual_pct > fill_target_pct + deviation / 2.0 {
-            hi = effective_target; // overshot -> sparser grid
-        } else {
-            break; // within tolerance
+        let row_min = ((ty0 - anchor_y - half - stagger) / pitch).ceil() as i64;
+        let row_max = ((ty1 - anchor_y - half - stagger) / pitch).ceil() as i64 - 1;
+        for row in row_min..=row_max {
+            let cy = anchor_y + half + stagger + row as f64 * pitch;
+            if cy < ty0 || cy >= ty1 { continue; }
+            let r = Rect::new(coord!(x: cx - half, y: cy - half), coord!(x: cx + half, y: cy + half));
+            let r_poly = r.to_polygon();
+            if !keepout.iter().any(|(kb, kp)| r.intersects(kb) && r_poly.intersects(kp)) {
+                out.push(r);
+            }
         }
     }
-
-    best_rects
+    out
 }
 
 // Overlap fill
@@ -886,81 +884,45 @@ fn poly_to_boundary(poly: &geo::Polygon<f64>, layer: i16, datatype: i16) -> GdsB
     GdsBoundary { layer, datatype, xy, ..Default::default() }
 }
 
-// Geometry helpers
+// Keepout gathering
 
-fn clip_to_tile(r: Rect<f64>, tile: &Rect<f64>) -> Rect<f64> {
-    Rect::new(
-        coord!(x: r.min().x.max(tile.min().x), y: r.min().y.max(tile.min().y)),
-        coord!(x: r.max().x.min(tile.max().x), y: r.max().y.min(tile.max().y)),
-    )
-}
+/// Collect keepout entries from the 3x3 tile neighbourhood around `(ix, iy)`
+/// whose (already min_space-inflated) bbox intersects `expanded` (the tile grown
+/// by the halo).  Gathering from neighbours gives a tile visibility of keepout
+/// just past its own seam, so fills owned by this tile keep min_space from shapes
+/// that live in the adjacent tiles.
+fn gather_keepout_halo(
+    base: &[(Rect<f64>, geo::Polygon<f64>)],
+    idx: &[Vec<usize>],
+    nx: usize, ny: usize,
+    ix: usize, iy: usize,
+    expanded: &Rect<f64>,
+) -> Vec<(Rect<f64>, geo::Polygon<f64>)> {
+    if nx == 0 || ny == 0 { return vec![]; }
+    let ix0 = ix.saturating_sub(1);
+    let iy0 = iy.saturating_sub(1);
+    let ix1 = (ix + 1).min(nx - 1);
+    let iy1 = (iy + 1).min(ny - 1);
 
-// Grid iteration
-
-fn iter_fill_positions(
-    tile: &Rect<f64>,
-    size: f64,
-    space: f64,
-    clipping: bool,
-    mut f: impl FnMut(Rect<f64>),
-) {
-    let pitch = size + space;
-    if pitch <= 0.0 { return; }
-
-    let half  = size / 2.0;
-    let drift = (pitch / 2.0).ceil();
-    let extra = if clipping { half } else { 0.0 };
-
-    let mut ix: usize = 0;
-    let mut cx = tile.min().x + half;
-    while cx <= tile.max().x + extra {
-        let y_offset = if ix % 2 == 1 { drift } else { 0.0 };
-        let mut cy = tile.min().y + half + y_offset;
-        while cy <= tile.max().y + extra {
-            f(Rect::new(
-                coord!(x: cx - half, y: cy - half),
-                coord!(x: cx + half, y: cy + half),
-            ));
-            cy += pitch;
+    let mut seen: HashSet<usize> = HashSet::new();
+    let mut out = Vec::new();
+    for jy in iy0..=iy1 {
+        for jx in ix0..=ix1 {
+            for &ki in &idx[jy * nx + jx] {
+                if seen.insert(ki) && expanded.intersects(&base[ki].0) {
+                    out.push(base[ki].clone());
+                }
+            }
         }
-        cx += pitch;
-        ix += 1;
     }
-}
-
-// Placement validity
-
-fn is_valid_placement(
-    tile: &Rect<f64>,
-    fill: &Rect<f64>,
-    keepout: &[(Rect<f64>, geo::Polygon<f64>)],
-    clipping: bool,
-) -> bool {
-    let cx = (fill.min().x + fill.max().x) / 2.0;
-    let cy = (fill.min().y + fill.max().y) / 2.0;
-
-    if cx < tile.min().x || cx > tile.max().x || cy < tile.min().y || cy > tile.max().y {
-        return false;
-    }
-    if !clipping
-        && (fill.min().x < tile.min().x || fill.max().x > tile.max().x
-            || fill.min().y < tile.min().y || fill.max().y > tile.max().y)
-    {
-        return false;
-    }
-    // Bbox pre-filter (4 comparisons) before the full polygon intersection check.
-    // Eliminates nearly all checks for tiny keepout shapes like Cont contacts.
-    let fill_poly = fill.to_polygon();
-    !keepout.iter().any(|(ko_bbox, ko_poly)| {
-        fill.intersects(ko_bbox) && fill_poly.intersects(ko_poly)
-    })
+    out
 }
 
 // Analytical parameter computation
 
 /// Compute fill (size, space) analytically from the target density.
 ///
-/// For the checkerboard grid in `iter_fill_positions`, each `pitch * pitch` cell
+/// For the checkerboard grid in `fill_square_global`, each `pitch * pitch` cell
 /// contains exactly one fill rect of area `size²`, giving:
 ///
 ///   density = (size / pitch)²   where pitch = size + space
@@ -995,28 +957,4 @@ fn analytical_params(
     let size  = (r * pitch).clamp(min_width, max_width);
     let space = ((1.0 - r) * pitch).clamp(min_space, max_space);
     (size, space)
-}
-
-// Fill shape generation
-
-fn generate_fill(
-    tile: &Rect<f64>,
-    keepout: &[(Rect<f64>, geo::Polygon<f64>)],
-    size: f64,
-    space: f64,
-    min_width: f64,
-    clipping: bool,
-) -> Vec<Rect<f64>> {
-    let mut out = Vec::new();
-    iter_fill_positions(tile, size, space, clipping, |fill_rect| {
-        if is_valid_placement(tile, &fill_rect, keepout, clipping) {
-            let r = if clipping { clip_to_tile(fill_rect, tile) } else { fill_rect };
-            let w = r.max().x - r.min().x;
-            let h = r.max().y - r.min().y;
-            if w >= min_width && h >= min_width {
-                out.push(r);
-            }
-        }
-    });
-    out
 }
