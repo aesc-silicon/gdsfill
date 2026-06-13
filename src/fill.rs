@@ -685,8 +685,9 @@ fn fill_overlap_tile(
 /// every unique routing-track position.
 ///
 /// # Tile-boundary safety
-/// In the free (along-routing) direction, a `min_space` margin is kept at the upper/right
-/// tile edge so that fills from different size passes in adjacent tiles never violate DRC.
+/// A `min_space` margin is kept at the upper/right tile edge in both directions so that
+/// fills from different size passes or (half-)track offsets in adjacent tiles never
+/// violate DRC; neighbouring tiles' shapes may touch their own lower/left edge.
 fn fill_track_tile(
     tile: &Rect<f64>,
     keepout: &[(Rect<f64>, geo::Polygon<f64>)],
@@ -810,12 +811,16 @@ fn fill_track_tile(
                     let cx_start = anchor_x + n_x as f64 * pitch_x;
                     let cy_start = anchor_y + n_y as f64 * pitch_y;
 
-                    // Guard at the upper/right tile edge in the free direction: fills from
-                    // different free_size passes in adjacent tiles keep >= min_space.
-                    let (x_limit, y_limit) = match tp.orientation {
-                        TrackOrientation::Vertical   => (bx1,                    by1 - min_space_dbu),
-                        TrackOrientation::Horizontal => (bx1 - min_space_dbu,    by1),
-                    };
+                    // Guard at the upper/right tile edge in BOTH directions.  Within one
+                    // Track pass, adjacent tiles place shapes of different sizes and
+                    // (half-)track offsets without seeing each other's keepout, so grid
+                    // alignment alone does not guarantee cross-tile spacing (e.g. a
+                    // half-track shape vs a track-aligned one -> gaps/2 = 0.24 µm).
+                    // Reserving min_space on the upper/right side keeps any pair of
+                    // fills from adjacent tiles >= min_space apart; the neighbour's
+                    // shapes may touch its own lower/left edge.
+                    let x_limit = bx1 - min_space_dbu;
+                    let y_limit = by1 - min_space_dbu;
 
                     let mut cx = cx_start;
                     while cx + half_x <= x_limit {
