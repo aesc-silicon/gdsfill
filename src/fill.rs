@@ -259,9 +259,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
 
         // Fills accumulated across this layer's algorithm passes.
         let mut layer_fill_rects: Vec<Rect<f64>> = Vec::new();
-        let mut layer_boundaries: Vec<GdsBoundary> = Vec::new();
-        // New fill area placed per tile (summed across passes), for reporting and
-        // for the running density fed into Track/Overlap.
+        // New fill area placed per tile (summed across passes).  During the passes
+        // this feeds the running density into Track/Overlap; after the window cap it
+        // is recomputed from the kept rects for reporting.
         let mut tile_new_area: Vec<f64> = vec![0.0; nx * ny];
 
         let fill_t = Instant::now();
@@ -288,10 +288,10 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
                 placed_ko.iter().map(|(_, p)| p.clone()).collect();
             let placed_idx = build_tile_index(&placed_polys, x_min, y_min, tile_size, nx, ny);
 
-            let pass: Vec<(Vec<GdsBoundary>, Vec<Rect<f64>>, f64)> = coords.par_iter()
+            let pass: Vec<(Vec<Rect<f64>>, f64)> = coords.par_iter()
                 .map(|&(ix, iy)| {
                     let (tile, tile_area) = tile_geom(ix, iy);
-                    if tile_area <= 0.0 { return (vec![], vec![], 0.0); }
+                    if tile_area <= 0.0 { return (vec![], 0.0); }
 
                     // Expanded query rect for halo keepout gathering.
                     let expanded = Rect::new(
@@ -336,7 +336,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
                         FillAlgorithm::Square(_) => {
                             let (size, space) = square_grid_params
                                 .expect("square grid params computed when a Square algo is present");
-                            fill_square_global(&tile, &tile_keepout, size, space, x_min, y_min)
+                            fill_square_global(&tile, &tile_keepout, size, space, x_min, y_min, &tctx)
                                 .into_iter().filter(|r| inside_boundary(r)).collect()
                         }
                         FillAlgorithm::Overlap(op) => {
@@ -358,20 +358,81 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
 
                     let added_area: f64 = new_rects.iter()
                         .map(|r| (r.max().x - r.min().x) * (r.max().y - r.min().y)).sum();
-                    let boundaries: Vec<GdsBoundary> = new_rects.iter()
-                        .map(|r| rect_to_boundary(*r, layer.gds_layer, layer.fill_datatype))
-                        .collect();
-                    (boundaries, new_rects, added_area)
+                    (new_rects, added_area)
                 })
                 .collect();
 
             // Merge this pass into the layer accumulators.
-            for (t, (b, r, area)) in pass.into_iter().enumerate() {
+            for (t, (r, area)) in pass.into_iter().enumerate() {
                 let (ix, iy) = coords[t];
                 tile_new_area[iy * nx + ix] += area;
-                layer_boundaries.extend(b);
                 layer_fill_rects.extend(r);
             }
+        }
+
+        // ---- Window-level density cap ---------------------------------------
+        // The foundry density rule is enforced over a larger window
+        // (`pdk.tile_width_um`, e.g. 800 µm), not the 100 µm fill tile.  Padframe
+        // metal can push a whole window to the max even where the core is sparse,
+        // so filling every sparse 100 µm tile to `target` overshoots the window.
+        // Cap each window's fill to the budget that brings drawn + fill down to
+        // `target`, thinning the placed rects deterministically.  Removing rects
+        // from a valid min-space set only increases spacing, so it stays DRC-clean.
+        let window_size = pdk.tile_width_um / dbu;
+        let nwx = (((x_max - x_min) / window_size).ceil() as usize).max(1);
+        let nwy = (((y_max - y_min) / window_size).ceil() as usize).max(1);
+        let win_of = |x: f64, y: f64| -> usize {
+            let wx = (((x - x_min) / window_size).floor() as i64).clamp(0, nwx as i64 - 1) as usize;
+            let wy = (((y - y_min) / window_size).floor() as i64).clamp(0, nwy as i64 - 1) as usize;
+            wy * nwx + wx
+        };
+
+        // Per-window existing (drawn + old fill) area and total window area.
+        let mut win_existing = vec![0.0_f64; nwx * nwy];
+        let mut win_area     = vec![0.0_f64; nwx * nwy];
+        for &(ix, iy) in &coords {
+            let e = &existing[iy * nx + ix];
+            if e.tile_area <= 0.0 { continue; }
+            let w = win_of(x_min + ix as f64 * tile_size, y_min + iy as f64 * tile_size);
+            win_existing[w] += e.draw_area + e.old_fill_area;
+            win_area[w]     += e.tile_area;
+        }
+
+        // Per-window placed fill area (rects owned by the window containing their centre).
+        let mut win_fill = vec![0.0_f64; nwx * nwy];
+        for r in &layer_fill_rects {
+            let cx = (r.min().x + r.max().x) / 2.0;
+            let cy = (r.min().y + r.max().y) / 2.0;
+            win_fill[win_of(cx, cy)] += (r.max().x - r.min().x) * (r.max().y - r.min().y);
+        }
+
+        // Keep ratio per window: scale fill so drawn + fill reaches `target`,
+        // dropping all fill where drawn metal alone already meets it.
+        let win_keep: Vec<f64> = (0..nwx * nwy).map(|w| {
+            if win_area[w] <= 0.0 || win_fill[w] <= 0.0 { return 1.0; }
+            let budget = (target_density / 100.0 * win_area[w] - win_existing[w]).max(0.0);
+            (budget / win_fill[w]).clamp(0.0, 1.0)
+        }).collect();
+
+        // Apply the cap: keep each rect with probability `win_keep` of its window
+        // via a deterministic hash of its grid-snapped centre (seam-consistent).
+        layer_fill_rects.retain(|r| {
+            let cx = (r.min().x + r.max().x) / 2.0;
+            let cy = (r.min().y + r.max().y) / 2.0;
+            let keep = win_keep[win_of(cx, cy)];
+            keep >= 1.0 || cell_hash(cx.round() as i64, cy.round() as i64) < keep
+        });
+
+        // Rebuild boundaries and the final per-tile new-area from the kept rects.
+        tile_new_area.iter_mut().for_each(|v| *v = 0.0);
+        let mut layer_boundaries: Vec<GdsBoundary> = Vec::with_capacity(layer_fill_rects.len());
+        for r in &layer_fill_rects {
+            let cx = (r.min().x + r.max().x) / 2.0;
+            let cy = (r.min().y + r.max().y) / 2.0;
+            let ix = (((cx - x_min) / tile_size).floor() as i64).clamp(0, nx as i64 - 1) as usize;
+            let iy = (((cy - y_min) / tile_size).floor() as i64).clamp(0, ny as i64 - 1) as usize;
+            tile_new_area[iy * nx + ix] += (r.max().x - r.min().x) * (r.max().y - r.min().y);
+            layer_boundaries.push(rect_to_boundary(*r, layer.gds_layer, layer.fill_datatype));
         }
 
         let fill_elapsed = fill_t.elapsed();
@@ -534,6 +595,16 @@ fn square_grid(sq: &crate::pdk::SquareParams, target_pct: f64, dbu: f64, grid_db
 /// `[min, max)` in each axis), so every cell is emitted exactly once.  Odd columns
 /// are staggered by `pitch/2`; the column parity is taken from the *global* column
 /// index so the checkerboard is continuous across tile seams.
+///
+/// **Density budget.**  The lattice geometry (`size`, `space`) is sized for the
+/// layer's *full* target density assuming an empty tile.  Where drawn metal or
+/// earlier-pass fill already exists, placing every lattice cell would overshoot
+/// the target.  So we cap the fill to the remaining budget
+/// (`target - running_pct`) by thinning the candidate cells: each cell is kept
+/// with probability `keep_ratio` via a deterministic per-cell hash of its global
+/// `(col, row)` index.  Thinning a subset of a valid min-space lattice only ever
+/// *increases* spacing, so the result stays DRC-clean and seam-consistent across
+/// tiles (the keep decision depends only on global lattice coordinates).
 fn fill_square_global(
     tile: &Rect<f64>,
     keepout: &[(Rect<f64>, geo::Polygon<f64>)],
@@ -541,11 +612,17 @@ fn fill_square_global(
     space: f64,
     anchor_x: f64,
     anchor_y: f64,
+    ctx: &TileCtx,
 ) -> Vec<Rect<f64>> {
     let pitch = size + space;
     if pitch <= 0.0 { return vec![]; }
     let half  = size / 2.0;
     let drift = pitch / 2.0; // on-grid: pitch is a multiple of 2*grid_dbu
+
+    // Remaining density budget for this tile.  Mirror the Track/Overlap guard:
+    // if the tile is already within deviation/2 of the target, add nothing.
+    let fill_target_pct = ctx.target_density - ctx.running_pct;
+    if fill_target_pct <= ctx.deviation / 2.0 { return vec![]; }
 
     let (tx0, ty0, tx1, ty1) = (tile.min().x, tile.min().y, tile.max().x, tile.max().y);
 
@@ -553,7 +630,8 @@ fn fill_square_global(
     let col_min = ((tx0 - anchor_x - half) / pitch).ceil() as i64;
     let col_max = ((tx1 - anchor_x - half) / pitch).ceil() as i64 - 1;
 
-    let mut out = Vec::new();
+    // Candidate cells (global col/row) that clear keepout.
+    let mut candidates: Vec<(i64, i64, Rect<f64>)> = Vec::new();
     for col in col_min..=col_max {
         let cx = anchor_x + half + col as f64 * pitch;
         if cx < tx0 || cx >= tx1 { continue; }
@@ -567,11 +645,40 @@ fn fill_square_global(
             let r = Rect::new(coord!(x: cx - half, y: cy - half), coord!(x: cx + half, y: cy + half));
             let r_poly = r.to_polygon();
             if !keepout.iter().any(|(kb, kp)| r.intersects(kb) && r_poly.intersects(kp)) {
-                out.push(r);
+                candidates.push((col, row, r));
             }
         }
     }
-    out
+
+    // Thin to the remaining budget.  full_area is the area if every candidate
+    // were placed; keep_ratio scales that down to the area still allowed.
+    let cell_area = size * size;
+    let full_area = candidates.len() as f64 * cell_area;
+    if full_area <= 0.0 { return vec![]; }
+    let budget_area = (fill_target_pct / 100.0) * ctx.tile_area;
+    let keep_ratio = (budget_area / full_area).clamp(0.0, 1.0);
+    if keep_ratio >= 1.0 {
+        return candidates.into_iter().map(|(_, _, r)| r).collect();
+    }
+
+    candidates.into_iter()
+        .filter(|&(col, row, _)| cell_hash(col, row) < keep_ratio)
+        .map(|(_, _, r)| r)
+        .collect()
+}
+
+/// Deterministic uniform hash of a lattice cell's global `(col, row)` index,
+/// returning a value in `[0, 1)`.  Used to thin the Square lattice consistently
+/// across tile seams: the same cell yields the same value regardless of which
+/// tile evaluates it.  (SplitMix64-style integer mixing.)
+fn cell_hash(col: i64, row: i64) -> f64 {
+    let mut h = (col as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= (row as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    h = (h ^ (h >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    h ^= h >> 31;
+    // Top 53 bits -> uniform double in [0, 1).
+    (h >> 11) as f64 / ((1u64 << 53) as f64)
 }
 
 // Overlap fill
