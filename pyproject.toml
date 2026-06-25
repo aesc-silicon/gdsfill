@@ -36,6 +36,10 @@ Issues = "https://github.com/aesc-silicon/gdsfill/issues"
 [project.scripts]
 gdsfill = "gdsfill.gdsfill:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gdsfill*"]
+
 [tool.setuptools.package-data]
 gdsfill = [
     "library/layers.yaml",
