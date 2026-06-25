@@ -226,7 +226,8 @@ def arguments(args=None):
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--process", default="ihp-sg13g2")
-    subparsers = parser.add_subparsers(help='subcommand help')
+    subparsers = parser.add_subparsers(dest='command', required=True,
+                                       help='subcommand help')
     parser_fill = subparsers.add_parser('fill', help='Fill chip with dummy metal')
     parser_fill.add_argument("input", type=is_valid_file)
     parser_fill.add_argument('--keep-data', action=argparse.BooleanOptionalAction)
