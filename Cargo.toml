@@ -9,6 +9,13 @@ readme = "src/README.md"
 repository = "https://github.com/aesc-silicon/gdsfill"
 keywords = ["gds", "eda", "vlsi", "fill", "layout"]
 categories = ["command-line-utilities", "science"]
+include = [
+    "src/**/*.rs",
+    "src/configs/*.yaml",
+    "src/README.md",
+    "/COPYING",
+    "/LICENSE",
+]
 
 [profile.release]
 opt-level = 3        # maximum optimization
