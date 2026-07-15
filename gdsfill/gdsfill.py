@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """
 Command-line interface for GDSII dummy fill operations.
 

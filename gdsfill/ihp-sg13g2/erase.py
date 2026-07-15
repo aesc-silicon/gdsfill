@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # pylint:disable=duplicate-code
 """
 Erase dummy fill layers from an active GDSII layout in KLayout.

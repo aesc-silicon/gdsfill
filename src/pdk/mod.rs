@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 aesc silicon
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use std::collections::HashMap;
 
 pub mod ihp_sg13;

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 DB2NM: 1000
 tile_width: 800
 minimum_klayout: 0.29.12

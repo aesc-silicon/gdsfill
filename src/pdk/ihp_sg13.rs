@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 aesc silicon
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Keep-out polygon generation for the IHP SG13 process family.
 //!
 //! Spacing constants live here; fill algorithm specs remain in `pdk/mod.rs`.

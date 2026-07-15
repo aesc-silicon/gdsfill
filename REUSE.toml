@@ -1,0 +1,18 @@
+version = 1
+SPDX-PackageName = "gdsfill"
+SPDX-PackageDownloadLocation = "https://github.com/aesc-silicon/gdsfill"
+
+[[annotations]]
+path = ".github/CODEOWNERS"
+SPDX-FileCopyrightText = "2026 aesc silicon"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "requirements*txt"
+SPDX-FileCopyrightText = "2026 aesc silicon"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "Cargo.lock"
+SPDX-FileCopyrightText = "2026 aesc silicon"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
