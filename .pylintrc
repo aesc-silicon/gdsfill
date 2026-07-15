@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 [MAIN]
 
 # Analyse import fallback blocks. This can be used to support both Python 2 and

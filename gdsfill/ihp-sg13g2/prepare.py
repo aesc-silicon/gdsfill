@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # pylint:disable=duplicate-code
 """
 Tile preparation utilities for PDK fill flows.

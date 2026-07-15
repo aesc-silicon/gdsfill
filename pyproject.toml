@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
@@ -10,7 +14,7 @@ authors = [
     { name = "Daniel Schultz", email = "dnltz@aesc-silicon.de" }
 ]
 readme = "README.rst"
-license = "LGPL-2.1-or-later"
+license = "AGPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.9"
 classifiers = [

@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 aesc silicon
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # gdsfill
 
 **gdsfill** is an open-source tool for inserting dummy metal fill into semiconductor layouts.
