@@ -232,7 +232,7 @@ fn ihp_sg13g2() -> PdkConstants {
 
     layers.insert("GatPoly", ihp_layer!(
         5, [overlap(0.7, 5.0, 0.18, 0.8)],
-        25.0, 3.0, 100.0, merge = 50.0));
+        30.0, 3.0, 100.0, merge = 50.0));
 
     layers.insert("Metal1", ihp_layer!(
         8, [square(1.0, 5.0, 0.42, 10.0)],
@@ -288,7 +288,7 @@ fn ihp_sg13cmos5l() -> PdkConstants {
 
     layers.insert("GatPoly", ihp_layer!(
         5, [overlap(0.7, 5.0, 0.18, 0.8)],
-        25.0, 2.0, 100.0, merge = 50.0));
+        30.0, 3.0, 100.0, merge = 50.0));
 
     layers.insert("Metal1", ihp_layer!(
         8, [square(1.0, 5.0, 0.42, 10.0)],
