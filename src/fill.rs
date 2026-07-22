@@ -203,10 +203,23 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
             .and_then(|key| placed_rects.get(&key))
             .cloned()
             .unwrap_or_default();
+        // Assign each reference rect to exactly ONE tile by its centroid (half-open
+        // [min, max) ownership, matching Square/Track).  `build_tile_index` lists a
+        // rect in every tile its bbox overlaps, so a reference rect straddling a tile
+        // seam would be owned by both neighbours and each would emit an identical
+        // Overlap fill -> coincident duplicate shapes on the seam.  Centroid ownership
+        // emits each overlap fill exactly once; cross-tile spacing is still enforced
+        // by the halo keepout, so nothing else changes.
         let ref_tile_idx: Vec<Vec<usize>> = if overlap_ref_key.is_some() {
-            let ref_polys: Vec<geo::Polygon<f64>> = ref_rects_storage.iter()
-                .map(|r| r.to_polygon()).collect();
-            build_tile_index(&ref_polys, x_min, y_min, tile_size, nx, ny)
+            let mut idx = vec![vec![]; nx * ny];
+            for (ki, r) in ref_rects_storage.iter().enumerate() {
+                let cx = (r.min().x + r.max().x) / 2.0;
+                let cy = (r.min().y + r.max().y) / 2.0;
+                let ix = (((cx - x_min) / tile_size).floor() as i64).clamp(0, nx as i64 - 1) as usize;
+                let iy = (((cy - y_min) / tile_size).floor() as i64).clamp(0, ny as i64 - 1) as usize;
+                idx[iy * nx + ix].push(ki);
+            }
+            idx
         } else {
             vec![vec![]; nx * ny]
         };
@@ -426,6 +439,25 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
             let keep = win_keep[win_of(cx, cy)];
             keep >= 1.0 || cell_hash(cx.round() as i64, cy.round() as i64) < keep
         });
+
+        // Defensive dedup guard: drop coincident duplicate rects (identical corners
+        // on the manufacturing grid).  The centroid ownership above should already
+        // prevent these, so any survivor signals a regression -- assert in debug and
+        // warn in release.  Duplicates would otherwise inflate the density accounting
+        // and read as overlapping fill in the layout.
+        let before_dedup = layer_fill_rects.len();
+        let mut seen_rects: HashSet<(i64, i64, i64, i64)> = HashSet::new();
+        layer_fill_rects.retain(|r| seen_rects.insert((
+            r.min().x.round() as i64, r.min().y.round() as i64,
+            r.max().x.round() as i64, r.max().y.round() as i64,
+        )));
+        let dup_dropped = before_dedup - layer_fill_rects.len();
+        debug_assert!(dup_dropped == 0,
+            "coincident duplicate fills on layer '{}': {}", name, dup_dropped);
+        if dup_dropped > 0 {
+            eprintln!("Warning: dropped {} coincident duplicate fill(s) on layer '{}'",
+                dup_dropped, name);
+        }
 
         // Rebuild boundaries and the final per-tile new-area from the kept rects.
         tile_new_area.iter_mut().for_each(|v| *v = 0.0);
