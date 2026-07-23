@@ -36,8 +36,8 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool) -> Result<()> {
 
     let mut needed: HashSet<(i16, i16)> = HashSet::new();
 
-    let (bl_layer, bl_datatype) = pdk.boundary_layer
-        .ok_or_else(|| anyhow!("No boundary layer defined for process '{}'", process))?;
+    let (bl_layer, bl_datatype) = pdk.density_boundary_layer
+        .ok_or_else(|| anyhow!("No density boundary layer defined for process '{}'", process))?;
     needed.insert((bl_layer, bl_datatype));
 
     let density_targets = get_target_layers(&ctx);

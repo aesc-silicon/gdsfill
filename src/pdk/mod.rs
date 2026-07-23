@@ -170,8 +170,12 @@ pub struct PdkConstants {
     pub db_unit_um: f64,
     /// Default tile width in micrometres.
     pub tile_width_um: f64,
-    /// GDS (layer, datatype) that defines the chip boundary (Edge.Seal for IHP).
-    pub boundary_layer: Option<(i16, i16)>,
+    /// GDS (layer, datatype) that bounds where fill shapes may be placed
+    /// (prBoundary, (39,0) for IHP).
+    pub fill_boundary_layer: Option<(i16, i16)>,
+    /// GDS (layer, datatype) whose filled exterior defines the reference area
+    /// for density calculation (Edge.Seal, (39,4) for IHP).
+    pub density_boundary_layer: Option<(i16, i16)>,
     /// Manufacturing grid in database units (e.g. 5 DBU = 5 nm for IHP).
     /// Fill shape sizes and spaces are snapped to multiples of `2 * grid_dbu`
     /// so that `half = size/2` always lands on a grid point.
@@ -271,7 +275,8 @@ fn ihp_sg13g2() -> PdkConstants {
         40.0, 10.0, 800.0));
 
     PdkConstants {
-        layers, db_unit_um: 0.001, tile_width_um: 800.0, boundary_layer: Some((39, 0)),
+        layers, db_unit_um: 0.001, tile_width_um: 800.0,
+        fill_boundary_layer: Some((39, 0)), density_boundary_layer: Some((39, 4)),
         grid_dbu: 5.0,
     }
 }
@@ -317,7 +322,8 @@ fn ihp_sg13cmos5l() -> PdkConstants {
         40.0, 10.0, 800.0));
 
     PdkConstants {
-        layers, db_unit_um: 0.001, tile_width_um: 800.0, boundary_layer: Some((39, 0)),
+        layers, db_unit_um: 0.001, tile_width_um: 800.0,
+        fill_boundary_layer: Some((39, 0)), density_boundary_layer: Some((39, 4)),
         grid_dbu: 5.0,
     }
 }
