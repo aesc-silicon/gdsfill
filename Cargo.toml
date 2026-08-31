@@ -4,19 +4,20 @@
 
 [package]
 name = "gdsfill"
+# When bumping: also update the tag in README.md's image URL
 version = "0.1.8"
 edition = "2024"
 authors = ["Daniel Schultz <dnltz@aesc-silicon.de>"]
 description = "Open-source tool for inserting dummy metal fill into semiconductor layouts."
 license = "AGPL-3.0-or-later"
-readme = "src/README.md"
+readme = "README.md"
 repository = "https://github.com/aesc-silicon/gdsfill"
 keywords = ["gds", "eda", "vlsi", "fill", "layout"]
 categories = ["command-line-utilities", "science"]
 include = [
     "src/**/*.rs",
     "src/configs/*.yaml",
-    "src/README.md",
+    "README.md",
     "/LICENSE",
 ]
 
