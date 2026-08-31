@@ -6,9 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # gdsfill
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/aesc-silicon/gdsfill/main/images/gdsfill-logo.svg" alt="gdsfill" width="640">
-</p>
+![gdsfill](https://raw.githubusercontent.com/aesc-silicon/gdsfill/main/images/gdsfill-logo.svg)
 
 **gdsfill** is an open-source tool for inserting dummy metal fill into semiconductor layouts.
 It helps designers meet density requirements and prepare GDSII layouts for manufacturing by analyzing, erasing, and generating dummy fill patterns across multiple layers.
