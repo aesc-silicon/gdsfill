@@ -16,3 +16,8 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 path = "Cargo.lock"
 SPDX-FileCopyrightText = "2026 aesc silicon"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "images/**"
+SPDX-FileCopyrightText = "2026 aesc silicon"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

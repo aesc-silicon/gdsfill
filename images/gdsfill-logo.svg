@@ -1,0 +1,114 @@
+<svg width="1280" height="360" viewBox="0 0 1280 360" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatchMagenta" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#3d1030"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#e0459b" stroke-width="1.6"/>
+    </pattern>
+    <pattern id="hatchCyan" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#0c2f38"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#38c6d9" stroke-width="1.6"/>
+    </pattern>
+    <pattern id="hatchAmber" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#3a2c08"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#e8b53a" stroke-width="1.4"/>
+    </pattern>
+    <pattern id="hatchBlue" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#123b6b"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#4d9fff" stroke-width="1.6"/>
+    </pattern>
+    <linearGradient id="streakB" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4d9fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#4d9fff" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="360" fill="#0a0d12"/>
+
+  <!-- layout grid -->
+  <g stroke="#182028" stroke-width="1">
+    <path d="M0 80h1280M0 160h1280M0 240h1280M0 320h1280"/>
+    <path d="M80 0v360M160 0v360M240 0v360M320 0v360M400 0v360M480 0v360M560 0v360M640 0v360M720 0v360M800 0v360M880 0v360M960 0v360M1040 0v360M1120 0v360M1200 0v360"/>
+  </g>
+  <g stroke="#2a3642" stroke-width="1">
+    <path d="M160 0v9M320 0v9M480 0v9M640 0v9M800 0v9M960 0v9M1120 0v9"/>
+  </g>
+
+  <!-- fill sweeping in from the left -->
+  <g>
+    <rect x="756" y="118" width="112" height="10" fill="url(#streakB)"/>
+    <rect x="762" y="160" width="106" height="8" fill="url(#streakB)"/>
+    <rect x="750" y="206" width="118" height="9" fill="url(#streakB)"/>
+    <rect x="770" y="250" width="98" height="8" fill="url(#streakB)"/>
+    <g stroke="#4d9fff" stroke-width="1.4" fill="url(#hatchBlue)">
+      <rect x="846" y="113" width="20" height="20" opacity="0.55"/>
+      <rect x="846" y="154" width="20" height="20" opacity="0.38"/>
+      <rect x="846" y="200" width="20" height="20" opacity="0.46"/>
+      <rect x="846" y="244" width="20" height="20" opacity="0.28"/>
+    </g>
+  </g>
+
+  <!-- density window -->
+  <rect x="876" y="52" width="308" height="240" fill="none"
+        stroke="#3b4a59" stroke-width="1.5" stroke-dasharray="7 6"/>
+  <g>
+    <rect x="876" y="76" width="172" height="24" fill="url(#hatchMagenta)" stroke="#e0459b" stroke-width="1.5"/>
+    <rect x="1108" y="76" width="76" height="22" fill="url(#hatchCyan)" stroke="#38c6d9" stroke-width="1.5"/>
+    <rect x="1162" y="76" width="22" height="116" fill="url(#hatchCyan)" stroke="#38c6d9" stroke-width="1.5"/>
+    <rect x="876" y="228" width="138" height="22" fill="url(#hatchAmber)" stroke="#e8b53a" stroke-width="1.5"/>
+    <rect x="1040" y="168" width="20" height="124" fill="url(#hatchAmber)" stroke="#e8b53a" stroke-width="1.5"/>
+    <rect x="1056" y="64" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.82"/>
+    <rect x="1056" y="92" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.82"/>
+    <rect x="888" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.5"/>
+    <rect x="916" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.55"/>
+    <rect x="944" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.61"/>
+    <rect x="972" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.66"/>
+    <rect x="1000" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.71"/>
+    <rect x="1028" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.77"/>
+    <rect x="1056" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.82"/>
+    <rect x="1084" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="120" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="888" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.5"/>
+    <rect x="916" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.55"/>
+    <rect x="944" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.61"/>
+    <rect x="972" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.66"/>
+    <rect x="1000" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.71"/>
+    <rect x="1084" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="148" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="888" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.5"/>
+    <rect x="916" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.55"/>
+    <rect x="944" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.61"/>
+    <rect x="972" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.66"/>
+    <rect x="1000" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.71"/>
+    <rect x="1084" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="176" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="1084" y="204" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="204" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="1140" y="204" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.98"/>
+    <rect x="1084" y="232" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="232" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="1140" y="232" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.98"/>
+    <rect x="888" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.5"/>
+    <rect x="916" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.55"/>
+    <rect x="944" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.61"/>
+    <rect x="972" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.66"/>
+    <rect x="1000" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.71"/>
+    <rect x="1084" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.87"/>
+    <rect x="1112" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.92"/>
+    <rect x="1140" y="260" width="20" height="20" fill="url(#hatchBlue)" stroke="#4d9fff" stroke-width="1.4" opacity="0.98"/>
+  </g>
+
+  <!-- window label + readout -->
+  <g font-family="JetBrains Mono">
+    <text x="876" y="40" font-size="15" fill="#5b6b7c">density window</text>
+    <text x="1184" y="318" font-size="17" fill="#4d9fff" text-anchor="end">density: 22% -&gt; 41%</text>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="JetBrains Mono">
+    <text x="76" y="205" font-size="90" font-weight="800" letter-spacing="-2">
+      <tspan fill="#e8eef4">gds</tspan><tspan fill="#4d9fff">fill</tspan>
+    </text>
+    <rect x="474" y="140" width="30" height="70" fill="#4d9fff" opacity="0.9"/>
+    <text x="80" y="258" font-size="23" fill="#9fb2c4">Open-source dummy metal fill for GDSII layouts.</text>
+  </g>
+</svg>
