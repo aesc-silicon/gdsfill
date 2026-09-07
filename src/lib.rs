@@ -17,7 +17,9 @@ use flate2::read::GzDecoder;
 use geo::{Area, BooleanOps, BoundingRect, coord, LineString, Polygon, Rect};
 use gds21::{GdsArrayRef, GdsElement, GdsLibrary, GdsPath, GdsStrans, GdsStruct, GdsStructRef};
 use i_overlay::core::fill_rule::FillRule;
+use i_overlay::core::overlay_rule::OverlayRule;
 use i_overlay::float::simplify::SimplifyShape;
+use i_overlay::float::single::SingleFloatOverlay;
 use gzp::{deflate::Gzip, par::compress::{ParCompress, ParCompressBuilder}, ZWriter};
 use rayon::prelude::*;
 
@@ -32,6 +34,8 @@ pub const DEBUG_KEEPOUT_DT: i16 = 250;
 pub const DEBUG_MERGED_DT: i16 = 251;
 
 // Shared run context
+
+pub const SUPPORTED_PROCESSES: &str = "ihp-sg13g2, ihp-sg13cmos5l, gf180mcuA, gf180mcuB, gf180mcuC, gf180mcuD";
 
 pub struct RunContext {
     pub process: String,
@@ -49,7 +53,7 @@ impl RunContext {
             })?;
         validate_process(process, config.as_ref())?;
         let pdk = PdkConstants::for_process(process).ok_or_else(|| {
-            anyhow!("Unknown process '{}'. Supported: ihp-sg13g2, ihp-sg13cmos5l", process)
+            anyhow!("Unknown process '{}'. Supported: {}", process, SUPPORTED_PROCESSES)
         })?;
         pdk.validate(process)?;
         Ok(Self { process: process.to_owned(), config, pdk })
@@ -92,7 +96,44 @@ pub fn read_gds(path: &Path) -> Result<GdsLibrary> {
     } else {
         std::fs::read(path)?
     };
+    let bytes = patch_empty_strings(bytes);
     GdsLibrary::from_bytes(&bytes).map_err(gds_err)
+}
+
+/// Work around gds21 panicking on zero-length string records.  KLayout writes
+/// empty TEXT labels (found in GF180 primitive cells) as a STRING record with
+/// no payload; gds21's `read_str` then indexes `data[len - 1]`.  Rewrite each
+/// such record with a two-byte NUL payload: gds21 reads it as "\0", and after
+/// write-back KLayout strips the NULs and sees the original empty label.
+fn patch_empty_strings(bytes: Vec<u8>) -> Vec<u8> {
+    const STRING_DTYPE: u8 = 6;
+    // Record header: u16 length (incl. header), u8 record type, u8 data type.
+    let record_len = |i: usize| u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
+    let is_empty_string = |i: usize| bytes[i + 3] == STRING_DTYPE && record_len(i) == 4;
+
+    let mut i = 0;
+    let mut found = false;
+    while i + 4 <= bytes.len() {
+        let len = record_len(i);
+        if len < 4 { break; }
+        if is_empty_string(i) { found = true; break; }
+        i += len;
+    }
+    if !found { return bytes; }
+
+    let mut out = Vec::with_capacity(bytes.len() + 64);
+    let mut i = 0;
+    while i + 4 <= bytes.len() {
+        let len = record_len(i);
+        if len < 4 { break; }
+        if is_empty_string(i) {
+            out.extend_from_slice(&[0, 6, bytes[i + 2], STRING_DTYPE, 0, 0]);
+        } else {
+            out.extend_from_slice(&bytes[i..(i + len).min(bytes.len())]);
+        }
+        i += len;
+    }
+    out
 }
 
 pub fn write_gds(lib: &GdsLibrary, path: &Path) -> Result<()> {
@@ -104,6 +145,18 @@ pub fn write_gds(lib: &GdsLibrary, path: &Path) -> Result<()> {
         encoder.finish().map_err(|e| anyhow!("{e}"))?;
     } else {
         lib.save(path).map_err(gds_err)?;
+    }
+    Ok(())
+}
+
+/// Fail if the library's database unit differs from what the PDK constants assume.
+pub fn check_units(lib: &GdsLibrary, pdk: &PdkConstants) -> Result<()> {
+    let gds_um = lib.units.db_unit() * 1e6;
+    if (gds_um - pdk.db_unit_um).abs() > pdk.db_unit_um * 1e-3 {
+        return Err(anyhow!(
+            "GDS database unit is {} µm but the process expects {} µm",
+            gds_um, pdk.db_unit_um
+        ));
     }
     Ok(())
 }
@@ -376,10 +429,224 @@ pub fn merge_polygons(polys: &[Polygon<f64>]) -> Vec<Polygon<f64>> {
     if polys.len() <= 1 {
         return polys.to_vec();
     }
+    // Single sweep-line pass over all edges.
+    from_shapes(to_shapes(polys).simplify_shape(FillRule::NonZero))
+}
 
-    // Convert geo polygons -> i_overlay shape format: Vec<Vec<Vec<[f64; 2]>>>
-    // Each shape is a list of contours; geo rings close with a repeated point -- drop it.
-    let shapes: Vec<Vec<Vec<[f64; 2]>>> = polys.iter()
+/// `a` minus `b` (both may overlap internally; NonZero fill).
+pub fn subtract_polygons(a: &[Polygon<f64>], b: &[Polygon<f64>]) -> Vec<Polygon<f64>> {
+    if a.is_empty() { return vec![]; }
+    if b.is_empty() { return a.to_vec(); }
+    from_shapes(to_shapes(a).overlay(&to_shapes(b), OverlayRule::Difference, FillRule::NonZero))
+}
+
+/// Minkowski sum of every edge of `polys` (exterior and holes) with a square
+/// of half-side `r`: the convex hull of the squares at both edge ends.  For an
+/// axis-aligned edge this is the plain band; for a diagonal edge the hull is
+/// smaller than the band would be at the ends, which matters for erosion
+/// (a band would over-erode next to 45-degree guard-ring corners).  The union
+/// of these hulls is exactly `sized(+r) - sized(-r)` of the merged region, so
+/// callers should merge first.
+pub fn edge_bands(polys: &[Polygon<f64>], r: f64) -> Vec<Polygon<f64>> {
+    use geo::ConvexHull;
+    let mut out = Vec::new();
+    for p in polys {
+        for ring in std::iter::once(p.exterior()).chain(p.interiors()) {
+            for w in ring.0.windows(2) {
+                if (w[1].x - w[0].x).hypot(w[1].y - w[0].y) < 1e-9 { continue; }
+                let pts: Vec<geo::Coord<f64>> = w.iter().flat_map(|c| [
+                    coord!(x: c.x - r, y: c.y - r), coord!(x: c.x + r, y: c.y - r),
+                    coord!(x: c.x + r, y: c.y + r), coord!(x: c.x - r, y: c.y + r),
+                ]).collect();
+                out.push(geo::MultiPoint::from(pts).convex_hull());
+            }
+        }
+    }
+    out
+}
+
+/// Windowed [`edge_bands`] of the *merged* region of `polys`.
+///
+/// The caller needs the boundary of the union, but a global merge of a layer
+/// with many large overlapping shapes is what blows up i_overlay (78 k Dualgate
+/// polygons on a 2 x 2.6 mm die exceeded 64 GB).  Splitting into `window`-sized
+/// cells is exact: every polygon covering any point of a cell grown by `r` has a
+/// bounding box overlapping it, so the union -- and hence its boundary -- is
+/// correct throughout that halo, and bands reaching the cell can only come from
+/// edges inside it.  Whole polygons are merged, never clipped, so no window edge
+/// is mistaken for a region boundary.
+pub fn edge_bands_tiled(polys: &[Polygon<f64>], r: f64, window: f64) -> Vec<Polygon<f64>> {
+    if polys.is_empty() { return vec![]; }
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let boxes: Vec<Rect<f64>> = polys.iter().filter_map(|p| p.bounding_rect()).collect();
+    for b in &boxes {
+        x0 = x0.min(b.min().x); y0 = y0.min(b.min().y);
+        x1 = x1.max(b.max().x); y1 = y1.max(b.max().y);
+    }
+    if boxes.len() != polys.len() || !x0.is_finite() { return edge_bands(&merge_polygons(polys), r); }
+    let window = window.max(2.0 * r);
+    let nx = ((x1 - x0) / window).ceil().max(1.0) as usize;
+    let ny = ((y1 - y0) / window).ceil().max(1.0) as usize;
+    if nx * ny <= 1 { return edge_bands(&merge_polygons(polys), r); }
+
+    (0..nx * ny).into_par_iter().flat_map(|w| {
+        let (ix, iy) = (w % nx, w / nx);
+        let cx0 = x0 + ix as f64 * window;
+        let cy0 = y0 + iy as f64 * window;
+        let cell = Rect::new(coord!(x: cx0, y: cy0), coord!(x: cx0 + window, y: cy0 + window));
+        // Halo: an edge farther than `r` from the cell cannot produce a band in it.
+        let (hx0, hy0) = (cx0 - r, cy0 - r);
+        let (hx1, hy1) = (cx0 + window + r, cy0 + window + r);
+        let local: Vec<Polygon<f64>> = boxes.iter().enumerate()
+            .filter(|(_, b)| b.min().x < hx1 && b.max().x > hx0 && b.min().y < hy1 && b.max().y > hy0)
+            .map(|(i, _)| polys[i].clone())
+            .collect();
+        if local.is_empty() { return vec![]; }
+        let cell_poly = cell.to_polygon();
+        edge_bands(&merge_polygons(&local), r)
+            .iter()
+            .flat_map(|b| b.intersection(&cell_poly).0)
+            .collect::<Vec<_>>()
+    }).collect()
+}
+
+/// Shrink merged `polys` by `r` on every side (square structuring element).
+pub fn erode_polygons(polys: &[Polygon<f64>], r: f64) -> Vec<Polygon<f64>> {
+    subtract_polygons(polys, &edge_bands(polys, r))
+}
+
+/// True if `p` is a hole-free axis-aligned rectangle.
+fn is_axis_rect(p: &Polygon<f64>) -> bool {
+    if !p.interiors().is_empty() {
+        return false;
+    }
+    let ring = &p.exterior().0;
+    // Rings are closed, so a rectangle has 5 points with the first repeated.
+    let n = if ring.len() >= 2 && ring[0] == ring[ring.len() - 1] { ring.len() - 1 } else { ring.len() };
+    n == 4 && (0..4).all(|i| {
+        let (a, b) = (ring[i], ring[(i + 1) % 4]);
+        a.x == b.x || a.y == b.y
+    })
+}
+
+/// Grow the merged region by `r` (square structuring element).  Unlike
+/// [`offset_polygons`] this handles holes and concave outlines exactly for
+/// rectilinear input: the dilation is the region plus bands around its edges.
+///
+/// An axis-aligned rectangle dilated by a square is exactly the rectangle grown
+/// by `r` on all sides, so those take a fast path that feeds one shape into the
+/// union instead of five.  Layout layers are overwhelmingly plain rectangles and
+/// the union cost grows with the square of the number of overlapping shapes, so
+/// this is what keeps a dense layer's dilation tractable (440 k COMP rectangles:
+/// 9 GB and 7 s per window without it, 1 GB and 0.5 s with it).
+pub fn dilate_polygons(polys: &[Polygon<f64>], r: f64) -> Vec<Polygon<f64>> {
+    let (rects, rest): (Vec<&Polygon<f64>>, Vec<&Polygon<f64>>) =
+        polys.iter().partition(|p| is_axis_rect(p));
+    let mut grown: Vec<Polygon<f64>> = rects
+        .iter()
+        .filter_map(|p| p.bounding_rect())
+        .map(|b| Rect::new(
+            coord!(x: b.min().x - r, y: b.min().y - r),
+            coord!(x: b.max().x + r, y: b.max().y + r),
+        ).to_polygon())
+        .collect();
+    if !rest.is_empty() {
+        let rest: Vec<Polygon<f64>> = rest.into_iter().cloned().collect();
+        grown.extend(edge_bands(&rest, r));
+        grown.extend(rest);
+    }
+    merge_polygons(&grown)
+}
+
+/// Grow by `grow`, merge, then shrink by `shrink`; with `grow == shrink` this
+/// is a morphological closing (KLayout `sized(r).sized(-r)`), which fills gaps
+/// narrower than `2 * grow` between shapes.
+///
+/// Computed per `window` with a `grow + shrink` margin so that heavily
+/// overlapping grown shapes never form one global merge (a full-chip merge of
+/// 35 k COMP rectangles grown by 10 µm exceeded 100 GB).  The result inside
+/// each window is exact because erosion only depends on a `shrink`-radius
+/// neighbourhood, which the margin covers.
+pub fn close_polygons_tiled(
+    polys: &[Polygon<f64>],
+    grow: f64,
+    shrink: f64,
+    window: f64,
+) -> Result<Vec<Polygon<f64>>> {
+    if polys.is_empty() { return Ok(vec![]); }
+    let window = window.max(grow + shrink);
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in polys {
+        if let Some(b) = p.bounding_rect() {
+            x0 = x0.min(b.min().x); y0 = y0.min(b.min().y);
+            x1 = x1.max(b.max().x); y1 = y1.max(b.max().y);
+        }
+    }
+    // Grown shapes extend past the input bbox; widen the grid by one window.
+    let (x0, y0) = (x0 - window, y0 - window);
+    let nx = ((x1 + window - x0) / window).ceil().max(1.0) as usize;
+    let ny = ((y1 + window - y0) / window).ceil().max(1.0) as usize;
+    let idx = build_tile_index(polys, x0, y0, window, nx, ny)?;
+
+    Ok((0..nx * ny).into_par_iter().flat_map(|w| {
+        let (ix, iy) = (w % nx, w / nx);
+        let mut seen: HashSet<usize> = HashSet::new();
+        for jy in iy.saturating_sub(1)..=(iy + 1).min(ny - 1) {
+            for jx in ix.saturating_sub(1)..=(ix + 1).min(nx - 1) {
+                seen.extend(idx[jy * nx + jx].iter().copied());
+            }
+        }
+        if seen.is_empty() { return vec![]; }
+        let local: Vec<Polygon<f64>> = seen.iter().map(|&i| polys[i].clone()).collect();
+        let grown  = dilate_polygons(&merge_polygons(&local), grow);
+        let shrunk = erode_polygons(&grown, shrink);
+        let wx0 = x0 + ix as f64 * window;
+        let wy0 = y0 + iy as f64 * window;
+        let cell = Rect::new(coord!(x: wx0, y: wy0), coord!(x: wx0 + window, y: wy0 + window)).to_polygon();
+        shrunk.iter().flat_map(|p| p.intersection(&cell).0).collect()
+    }).collect())
+}
+
+/// Clip polygons with more than `max_vertices` vertices to the tile grid so
+/// that per-tile keep-out tests stay cheap.  Large closed/merged outlines
+/// (e.g. a whole standard-cell core) otherwise get tested edge-by-edge against
+/// every candidate in every tile they overlap.
+pub fn split_large_polygons(
+    polys: Vec<Polygon<f64>>,
+    max_vertices: usize,
+    x_min: f64, y_min: f64,
+    tile_size: f64,
+    nx: usize, ny: usize,
+) -> Vec<Polygon<f64>> {
+    let (small, large): (Vec<_>, Vec<_>) = polys.into_iter().partition(|p| {
+        p.exterior().0.len() + p.interiors().iter().map(|h| h.0.len()).sum::<usize>() <= max_vertices
+    });
+    let pieces: Vec<Polygon<f64>> = large.par_iter().flat_map(|p| {
+        let Some(b) = p.bounding_rect() else { return vec![] };
+        let ix0 = (((b.min().x - x_min) / tile_size).floor() as i64).clamp(0, nx as i64 - 1);
+        let ix1 = (((b.max().x - x_min) / tile_size).floor() as i64).clamp(0, nx as i64 - 1);
+        let iy0 = (((b.min().y - y_min) / tile_size).floor() as i64).clamp(0, ny as i64 - 1);
+        let iy1 = (((b.max().y - y_min) / tile_size).floor() as i64).clamp(0, ny as i64 - 1);
+        let mut out = Vec::new();
+        for iy in iy0..=iy1 {
+            for ix in ix0..=ix1 {
+                let tx0 = x_min + ix as f64 * tile_size;
+                let ty0 = y_min + iy as f64 * tile_size;
+                let cell = Rect::new(coord!(x: tx0, y: ty0), coord!(x: tx0 + tile_size, y: ty0 + tile_size));
+                out.extend(p.intersection(&cell.to_polygon()).0);
+            }
+        }
+        out
+    }).collect();
+    let mut all = small;
+    all.extend(pieces);
+    all
+}
+
+/// geo polygons -> i_overlay shapes (`Vec<Vec<Vec<[f64; 2]>>>`).
+/// Each shape is a list of contours; geo rings close with a repeated point -- drop it.
+fn to_shapes(polys: &[Polygon<f64>]) -> Vec<Vec<Vec<[f64; 2]>>> {
+    polys.iter()
         .map(|p| {
             // i_overlay expects CCW exterior contours for NonZero fill.
             // GDS stores polygons in arbitrary winding order, so normalise:
@@ -403,13 +670,12 @@ pub fn merge_polygons(polys: &[Polygon<f64>]) -> Vec<Polygon<f64>> {
             }
             contours
         })
-        .collect();
+        .collect()
+}
 
-    // Single sweep-line pass over all edges.
-    let merged = shapes.simplify_shape(FillRule::NonZero);
-
-    // Convert back: i_overlay contours are open (no repeated closing point).
-    merged.into_iter()
+/// i_overlay shapes -> geo polygons.  i_overlay contours are open (no repeated closing point).
+fn from_shapes(shapes: Vec<Vec<Vec<[f64; 2]>>>) -> Vec<Polygon<f64>> {
+    shapes.into_iter()
         .filter_map(|shape| {
             let mut contours = shape.into_iter();
             let outer = contours.next()?;

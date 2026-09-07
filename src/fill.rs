@@ -14,10 +14,13 @@ use rayon::prelude::*;
 
 use crate::pdk::FillAlgorithm;
 use crate::{
-    build_tile_index, clipped_area, empty_tile_index, get_target_layers, tile_grid_dims,
-    tiled_merge_area, read_gds, write_gds,
+    build_tile_index, check_units, clipped_area, empty_tile_index, get_target_layers,
+    split_large_polygons, tile_grid_dims, tiled_merge_area, read_gds, write_gds,
     RunContext, LayerMap, DEBUG_KEEPOUT_DT, DEBUG_MERGED_DT
 };
+
+/// Keep-out polygons above this vertex count are clipped to the tile grid.
+const KEEPOUT_SPLIT_VERTICES: usize = 64;
 
 pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose: bool) -> Result<()> {
     let RunContext { ref process, ref config, ref pdk } = ctx;
@@ -38,11 +41,14 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
     match process.as_str() {
         "ihp-sg13g2" | "ihp-sg13cmos5l" =>
             needed.extend(crate::pdk::ihp_sg13::needed_layers()),
+        p if p.starts_with("gf180mcu") =>
+            needed.extend(crate::pdk::gf180mcu::needed_layers()),
         _ => {}
     }
 
     let mut lib = read_gds(gds_file)
         .with_context(|| format!("Failed to read GDS file: {}", gds_file.display()))?;
+    check_units(&lib, pdk)?;
 
     let mut layer_map = LayerMap::build_for(&lib, Some(&needed));
     let bbox = layer_map.bbox(bl_layer, bl_datatype)
@@ -143,12 +149,16 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
                 "ihp-sg13g2" | "ihp-sg13cmos5l" => {
                     crate::pdk::ihp_sg13::build_keepout(&layer_map, name, layer, dbu)
                 }
+                p if p.starts_with("gf180mcu") => {
+                    crate::pdk::gf180mcu::build_keepout(&layer_map, bbox, name, layer, dbu)?
+                }
                 _ => {
                     eprintln!("Warning: no keepout rules for process '{}', fill may overlap existing metal", process);
                     vec![]
                 }
             };
-            polys.into_iter()
+            split_large_polygons(polys, KEEPOUT_SPLIT_VERTICES, x_min, y_min, tile_size, nx, ny)
+                .into_iter()
                 .filter_map(|p| p.bounding_rect().map(|bbox| (bbox, p)))
                 .collect()
         };
@@ -353,10 +363,12 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
                     };
 
                     let new_rects: Vec<Rect<f64>> = match algo {
-                        FillAlgorithm::Square(_) => {
+                        FillAlgorithm::Square(sq) => {
                             let (size, space) = square_grid_params
                                 .expect("square grid params computed when a Square algo is present");
-                            fill_square_global(&tile, &tile_keepout, size, space, x_min, y_min, &tctx)
+                            let anchor_x = x_min + sq.origin_um.0 / dbu;
+                            let anchor_y = y_min + sq.origin_um.1 / dbu;
+                            fill_square_global(&tile, &tile_keepout, size, space, anchor_x, anchor_y, &tctx)
                                 .into_iter().filter(|r| inside_boundary(r)).collect()
                         }
                         FillAlgorithm::Overlap(op) => {
@@ -726,6 +738,9 @@ fn cell_hash(col: i64, row: i64) -> f64 {
 /// Place one GatPoly-style fill rectangle centred on each reference (Activ) fill rect,
 /// choosing the gate height analytically to reach the target density.
 ///
+/// In `cover` mode the rect is instead the reference grown by `min_extension`
+/// on all sides (fixed size, no density-driven height).
+///
 /// **Algorithm**
 /// 1. Evaluate each candidate at `max_h` (the tallest legally allowed shape).
 ///    A rect that passes keepout at `max_h` will also pass at any `h <= max_h`
@@ -753,7 +768,7 @@ fn fill_overlap_tile(
     let max_w_grid = (max_width_dbu / g2).floor() * g2;
 
     // Pass 1: find candidates that survive keepout at their individual max_h.
-    struct Candidate { cx: f64, cy: f64, w: f64 }
+    struct Candidate { cx: f64, cy: f64, w: f64, h: f64 }
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut sum_w  = 0.0_f64;
     let mut cap_h  = f64::INFINITY; // minimum of all max_h_i -> uniform h cap
@@ -765,10 +780,13 @@ fn fill_overlap_tile(
         let cy = activ.min().y + activ_h / 2.0;
 
         let raw_w = activ_w + 2.0 * min_ext_dbu;
-        let w = ((raw_w / g2).round() * g2)
-            .clamp((min_width_dbu / g2).ceil() * g2, max_w_grid);
-
-        let max_h_grid = ((activ_h - 2.0 * min_ext_dbu).min(max_width_dbu) / g2).floor() * g2;
+        let (w, max_h_grid) = if op.cover {
+            ((raw_w / g2).round() * g2, ((activ_h + 2.0 * min_ext_dbu) / g2).round() * g2)
+        } else {
+            let w = ((raw_w / g2).round() * g2)
+                .clamp((min_width_dbu / g2).ceil() * g2, max_w_grid);
+            (w, ((activ_h - 2.0 * min_ext_dbu).min(max_width_dbu) / g2).floor() * g2)
+        };
         if max_h_grid < min_h_grid { continue; }
 
         // Test keepout at max_h -- conservative: any smaller h will also pass.
@@ -786,19 +804,20 @@ fn fill_overlap_tile(
 
         sum_w += w;
         cap_h = cap_h.min(max_h_grid);
-        candidates.push(Candidate { cx, cy, w });
+        candidates.push(Candidate { cx, cy, w, h: max_h_grid });
     }
 
     if candidates.is_empty() { return vec![]; }
 
-    // Pass 2: compute uniform h analytically, snap to grid.
+    // Pass 2: compute uniform h analytically, snap to grid (cover mode keeps
+    // each candidate's own full-cover height).
     let required_area = fill_target_pct / 100.0 * tile_area;
     let h_needed = required_area / sum_w;
-    let h = ((h_needed / g2).round() * g2).clamp(min_h_grid, cap_h);
+    let h_uniform = ((h_needed / g2).round() * g2).clamp(min_h_grid, cap_h);
 
     candidates.iter().map(|c| {
         let half_w = c.w / 2.0;
-        let half_h = h / 2.0;
+        let half_h = if op.cover { c.h } else { h_uniform } / 2.0;
         Rect::new(
             coord!(x: c.cx - half_w, y: c.cy - half_h),
             coord!(x: c.cx + half_w, y: c.cy + half_h),

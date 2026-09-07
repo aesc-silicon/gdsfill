@@ -24,6 +24,17 @@ $ cargo install gdsfill
 
 Rust 1.85 or later is required. If you don't have Rust installed, get it from [rustup.rs](https://rustup.rs).
 
+## Supported Processes
+
+| `--process`      | PDK                          | Layers                                     |
+|------------------|------------------------------|--------------------------------------------|
+| `ihp-sg13g2`     | IHP SG13G2                   | Activ, GatPoly, Metal1-5, TopMetal1-2      |
+| `ihp-sg13cmos5l` | IHP SG13CMOS5L               | Activ, GatPoly, Metal1-4, TopMetal1        |
+| `gf180mcuA`      | GlobalFoundries GF180MCU (A) | COMP, Poly2, Metal1-3 (30K top)            |
+| `gf180mcuB`      | GlobalFoundries GF180MCU (B) | COMP, Poly2, Metal1-4 (11K top)            |
+| `gf180mcuC`      | GlobalFoundries GF180MCU (C) | COMP, Poly2, Metal1-5 (9K top)             |
+| `gf180mcuD`      | GlobalFoundries GF180MCU (D) | COMP, Poly2, Metal1-5 (11K top)            |
+
 ## Density
 
 This command calculates the utilization per layer and prints the values.

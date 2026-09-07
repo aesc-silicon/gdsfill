@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 
+pub mod gf180mcu;
 pub mod ihp_sg13;
 
 // Algorithm parameter structs
@@ -18,6 +19,9 @@ pub struct SquareParams {
     pub max_space: f64,
     /// Whether fill squares may be clipped at tile edges (default true).
     pub clipping: bool,
+    /// Lattice origin offset from the chip bbox corner (in µm).  Use distinct
+    /// offsets per layer so consecutive layers do not replicate the pattern.
+    pub origin_um: (f64, f64),
 }
 
 /// Orientation of fill tracks (rows vs columns).
@@ -69,6 +73,11 @@ pub struct OverlapParams {
     /// Name of the PDK layer whose placed fill shapes are used as placement
     /// anchors (e.g. `"Activ"` for GatPoly overlap fill).
     pub ref_layer: &'static str,
+    /// `true`: the fill is the reference rect grown by `min_extension` on all
+    /// four sides, fully covering it (GF180 dummy Poly2 over dummy COMP).
+    /// `false`: a stripe `min_extension` wider than the reference but shorter
+    /// than it, with the height chosen from the density budget (IHP GatPoly).
+    pub cover: bool,
 }
 
 // Algorithm enum
@@ -84,11 +93,15 @@ pub enum FillAlgorithm {
 }
 
 fn square(min_width: f64, max_width: f64, min_space: f64, max_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Square(SquareParams { min_width, max_width, min_space, max_space, clipping: true })
+    FillAlgorithm::Square(SquareParams {
+        min_width, max_width, min_space, max_space, clipping: true, origin_um: (0.0, 0.0),
+    })
 }
 
 fn square_noclip(min_width: f64, max_width: f64, min_space: f64, max_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Square(SquareParams { min_width, max_width, min_space, max_space, clipping: false })
+    FillAlgorithm::Square(SquareParams {
+        min_width, max_width, min_space, max_space, clipping: false, origin_um: (0.0, 0.0),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -128,7 +141,9 @@ fn track_h(
 }
 
 fn overlap(min_width: f64, max_width: f64, min_extension: f64, min_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Overlap(OverlapParams { min_width, max_width, min_extension, min_space, ref_layer: "Activ" })
+    FillAlgorithm::Overlap(OverlapParams {
+        min_width, max_width, min_extension, min_space, ref_layer: "Activ", cover: false,
+    })
 }
 
 // Layer and process constants
@@ -141,8 +156,8 @@ pub struct PdkLayer {
     pub drawing_datatype: i16,
     /// GDS datatype written for generated fill shapes.
     pub fill_datatype: i16,
-    /// GDS datatype of no-fill keep-out markers.
-    pub nofill_datatype: i16,
+    /// GDS datatype of no-fill keep-out markers on the same layer, if any.
+    pub nofill_datatype: Option<i16>,
     /// Maximum cell hierarchy depth traversed when collecting shapes.
     pub max_depth: u32,
     /// Fill algorithms applied in order (e.g. Track first, then Square for remainder).
@@ -190,7 +205,10 @@ impl PdkConstants {
         match process {
             "ihp-sg13g2"     => Some(ihp_sg13g2()),
             "ihp-sg13cmos5l" => Some(ihp_sg13cmos5l()),
-            _ => None,
+            _ => process.strip_prefix("gf180mcu")
+                .and_then(|v| v.chars().next())
+                .filter(|_| process.len() == "gf180mcuX".len())
+                .and_then(gf180mcu::for_variant),
         }
     }
 
@@ -271,7 +289,7 @@ macro_rules! ihp_layer {
             gds_layer:         $gds_layer,
             drawing_datatype:  0,
             fill_datatype:     22,
-            nofill_datatype:   23,
+            nofill_datatype:   Some(23),
             max_depth:         10,
             algorithms:        vec![$($alg),+],
             default_density:   $density,

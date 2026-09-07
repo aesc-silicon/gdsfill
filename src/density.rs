@@ -11,9 +11,8 @@ use gds21::{GdsBoundary, GdsElement, GdsPoint};
 use rayon::prelude::*;
 
 use crate::{
-    build_tile_index, clipped_area, get_target_layers, tile_grid_dims, tiled_merge_area,
-    read_gds, write_gds,
-    RunContext, LayerMap, DEBUG_MERGED_DT
+    build_tile_index, check_units, clipped_area, get_target_layers, tile_grid_dims,
+    tiled_merge_area, read_gds, write_gds, RunContext, LayerMap, DEBUG_MERGED_DT
 };
 
 /// Per-tile density result, collected in parallel and sorted before printing.
@@ -50,6 +49,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Resu
 
     let mut lib = read_gds(gds_file)
         .with_context(|| format!("Failed to read GDS file: {}", gds_file.display()))?;
+    check_units(&lib, pdk)?;
 
     let all_cells: HashSet<&str> = lib.structs.iter()
         .flat_map(|s| s.elems.iter())
