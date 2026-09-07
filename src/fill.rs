@@ -18,7 +18,7 @@ use crate::{
     RunContext, LayerMap, DEBUG_KEEPOUT_DT, DEBUG_MERGED_DT
 };
 
-pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Result<()> {
+pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose: bool) -> Result<()> {
     let RunContext { ref process, ref config, ref pdk } = ctx;
 
     let mut needed: HashSet<(i16, i16)> = HashSet::new();
@@ -478,7 +478,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
         placed_rects.insert((layer.gds_layer, layer.fill_datatype), layer_fill_rects.clone());
 
         // Per-tile density table
-        for &(ix, iy) in &coords {
+        for &(ix, iy) in coords.iter().filter(|_| verbose) {
             let e = &existing[iy * nx + ix];
             if e.tile_area <= 0.0 { continue; }
             let new_area = tile_new_area[iy * nx + ix];
@@ -509,8 +509,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool) -> Resul
             (total < min_required).then_some((ix, iy, total))
         }).collect();
         if !under.is_empty() {
-            println!("  Under-density tiles ({} below {:.1}%):", under.len(), min_required);
-            for &(ix, iy, total) in &under {
+            println!("  Under-density tiles: {} below {:.1}%{}", under.len(), min_required,
+                if verbose { ":" } else { "  (--verbose lists them)" });
+            for &(ix, iy, total) in under.iter().filter(|_| verbose) {
                 let tx0 = x_min + ix as f64 * tile_size;
                 let tx1 = (tx0 + tile_size).min(x_max);
                 let ty0 = y_min + iy as f64 * tile_size;

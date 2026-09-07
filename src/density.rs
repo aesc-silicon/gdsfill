@@ -30,8 +30,9 @@ struct TileResult {
 /// matching KLayout's `(edgeseal + edgeseal.holes()).area()`.
 ///
 /// When `debug` is `true`, merged polygon shapes are written back to the GDS
-/// file on datatype [`DEBUG_MERGED_DT`] for visual inspection.
-pub fn run(gds_file: &Path, ctx: RunContext, debug: bool) -> Result<()> {
+/// file on datatype [`DEBUG_MERGED_DT`] for visual inspection.  The per-tile
+/// table is printed only when `verbose` is `true`.
+pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Result<()> {
     let RunContext { ref process, config: _, ref pdk } = ctx;
 
     let mut needed: HashSet<(i16, i16)> = HashSet::new();
@@ -159,7 +160,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool) -> Result<()> {
 
         let (tiles, total_draw, total_fill) = run_tiles(drawing);
 
-        for t in &tiles {
+        for t in tiles.iter().filter(|_| verbose) {
             let tx0 = x_min + t.ix as f64 * tile_size;
             let tx1 = (tx0 + tile_size).min(x_max);
             let ty0 = y_min + t.iy as f64 * tile_size;

@@ -33,6 +33,8 @@ It is useful to check layer density before and after running the fill process:
 gdsfill density <my-layout.gds>
 ```
 
+Both `density` and `fill` print one summary per layer. Add `--verbose` to also print the per-tile table.
+
 ## Erase
 
 If a layout already contains dummy fill, or if previous fills should be removed, this command erases all dummy metal fill from a layout:
