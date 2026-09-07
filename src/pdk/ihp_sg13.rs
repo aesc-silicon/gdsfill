@@ -141,7 +141,9 @@ fn keepout_gatpoly(map: &LayerMap, layer: &PdkLayer, dbu: f64) -> Vec<Polygon<f6
     // GatPoly drawing/fill expanded by the filler-specific rule (1.10 µm > general 0.8 µm).
     let mut ko = offset_polygons(map.polygons(layer.gds_layer, layer.drawing_datatype), s);
     ko.extend(offset_polygons(map.polygons(layer.gds_layer, layer.fill_datatype),    s));
-    ko.extend(offset_polygons(map.polygons(layer.gds_layer, layer.nofill_datatype), 0.0));
+    if let Some(dt) = layer.nofill_datatype {
+        ko.extend(map.polygons(layer.gds_layer, dt).iter().cloned());
+    }
     // All layers with 1.10 µm filler spacing rule.
     ko.extend(offset_polygons(map.polygons(ACTIV_LAYER,    ACTIV_DATATYPE),    s));
     ko.extend(offset_polygons(map.polygons(CONT_LAYER,     CONT_DATATYPE),     s));
@@ -172,6 +174,8 @@ fn keepout_topmetal(map: &LayerMap, layer: &PdkLayer, dbu: f64) -> Vec<Polygon<f
 fn base_keepout(map: &LayerMap, layer: &PdkLayer, space_dbu: f64) -> Vec<Polygon<f64>> {
     let mut ko = offset_polygons(map.polygons(layer.gds_layer, layer.drawing_datatype), space_dbu);
     ko.extend(offset_polygons(map.polygons(layer.gds_layer, layer.fill_datatype), space_dbu));
-    ko.extend(offset_polygons(map.polygons(layer.gds_layer, layer.nofill_datatype), 0.0));
+    if let Some(dt) = layer.nofill_datatype {
+        ko.extend(map.polygons(layer.gds_layer, dt).iter().cloned());
+    }
     ko
 }

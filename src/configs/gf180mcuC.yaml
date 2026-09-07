@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+PDK: gf180mcuC
+layers:
+  COMP:
+    algorithm: Square
+    density: 40
+    deviation: 15
+  Poly2:
+    algorithm: Overlap
+    density: 20
+    deviation: 6
+  Metal1:
+    algorithm: Square
+    density: 35
+    deviation: 5
+  Metal2:
+    algorithm: Square
+    density: 35
+    deviation: 5
+  Metal3:
+    algorithm: Square
+    density: 35
+    deviation: 5
+  Metal4:
+    algorithm: Square
+    density: 35
+    deviation: 5
+  Metal5:
+    algorithm: Square
+    density: 35
+    deviation: 5

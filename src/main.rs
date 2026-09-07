@@ -25,7 +25,7 @@ struct Cli {
 enum Commands {
     /// Erase dummy fill from a GDS layout
     Erase {
-        /// PDK process name (e.g. ihp-sg13g2, ihp-sg13cmos5l)
+        /// PDK process name (ihp-sg13g2, ihp-sg13cmos5l, gf180mcuA-D)
         #[arg(long)]
         process: String,
 
@@ -39,7 +39,7 @@ enum Commands {
 
     /// Calculate metal density per layer and per tile
     Density {
-        /// PDK process name (e.g. ihp-sg13g2, ihp-sg13cmos5l)
+        /// PDK process name (ihp-sg13g2, ihp-sg13cmos5l, gf180mcuA-D)
         #[arg(long)]
         process: String,
 
@@ -61,7 +61,7 @@ enum Commands {
 
     /// Add dummy fill to a GDS layout
     Fill {
-        /// PDK process name (e.g. ihp-sg13g2, ihp-sg13cmos5l)
+        /// PDK process name (ihp-sg13g2, ihp-sg13cmos5l, gf180mcuA-D)
         #[arg(long)]
         process: String,
 
