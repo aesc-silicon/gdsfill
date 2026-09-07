@@ -44,6 +44,10 @@ enum Commands {
         #[arg(long)]
         debug: bool,
 
+        /// Print the per-tile density table
+        #[arg(long, short)]
+        verbose: bool,
+
         /// Input GDS or GDS.GZ file
         gds_file: PathBuf,
     },
@@ -66,6 +70,10 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
 
+        /// Print the per-tile density table and every under-density tile
+        #[arg(long, short)]
+        verbose: bool,
+
         /// Input GDS or GDS.GZ file (overwritten in place)
         gds_file: PathBuf,
     },
@@ -84,13 +92,13 @@ fn main() -> anyhow::Result<()> {
             let ctx = RunContext::new(&process, config_file.as_deref())?;
             erase::run(&gds_file, ctx)?;
         }
-        Commands::Density { process, config_file, debug, gds_file } => {
+        Commands::Density { process, config_file, debug, verbose, gds_file } => {
             let ctx = RunContext::new(&process, config_file.as_deref())?;
-            density::run(&gds_file, ctx, debug)?;
+            density::run(&gds_file, ctx, debug, verbose)?;
         }
-        Commands::Fill { process, config_file, debug, dry_run, gds_file } => {
+        Commands::Fill { process, config_file, debug, dry_run, verbose, gds_file } => {
             let ctx = RunContext::new(&process, config_file.as_deref())?;
-            fill::run(&gds_file, ctx, debug, dry_run)?;
+            fill::run(&gds_file, ctx, debug, dry_run, verbose)?;
         }
     }
 
