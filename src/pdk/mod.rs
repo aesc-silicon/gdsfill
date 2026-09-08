@@ -92,60 +92,6 @@ pub enum FillAlgorithm {
     Overlap(OverlapParams),
 }
 
-fn square(min_width: f64, max_width: f64, min_space: f64, max_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Square(SquareParams {
-        min_width, max_width, min_space, max_space, clipping: true, origin_um: (0.0, 0.0),
-    })
-}
-
-fn square_noclip(min_width: f64, max_width: f64, min_space: f64, max_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Square(SquareParams {
-        min_width, max_width, min_space, max_space, clipping: false, origin_um: (0.0, 0.0),
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn track_v(
-    min_width: f64, max_width: f64,
-    min_space: f64, max_space: f64,
-    gaps: f64, cell_height: f64,
-    pass_fracs: &'static [f64],
-    free_heights_um: &'static [f64],
-) -> FillAlgorithm {
-    FillAlgorithm::Track(TrackParams {
-        min_width, max_width, min_space, max_space,
-        orientation: TrackOrientation::Vertical,
-        gaps, cell_height,
-        aggressive_fill: false,
-        pass_fracs,
-        free_heights_um,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn track_h(
-    min_width: f64, max_width: f64,
-    min_space: f64, max_space: f64,
-    gaps: f64, cell_height: f64,
-    pass_fracs: &'static [f64],
-    free_heights_um: &'static [f64],
-) -> FillAlgorithm {
-    FillAlgorithm::Track(TrackParams {
-        min_width, max_width, min_space, max_space,
-        orientation: TrackOrientation::Horizontal,
-        gaps, cell_height,
-        aggressive_fill: false,
-        pass_fracs,
-        free_heights_um,
-    })
-}
-
-fn overlap(min_width: f64, max_width: f64, min_extension: f64, min_space: f64) -> FillAlgorithm {
-    FillAlgorithm::Overlap(OverlapParams {
-        min_width, max_width, min_extension, min_space, ref_layer: "Activ", cover: false,
-    })
-}
-
 // Layer and process constants
 
 /// PDK-level description of a single physical layer.
@@ -203,8 +149,8 @@ impl PdkConstants {
     /// Return constants for the named process, or `None` if unknown.
     pub fn for_process(process: &str) -> Option<Self> {
         match process {
-            "ihp-sg13g2"     => Some(ihp_sg13g2()),
-            "ihp-sg13cmos5l" => Some(ihp_sg13cmos5l()),
+            "ihp-sg13g2"     => Some(ihp_sg13::sg13g2()),
+            "ihp-sg13cmos5l" => Some(ihp_sg13::sg13cmos5l()),
             _ => process.strip_prefix("gf180mcu")
                 .and_then(|v| v.chars().next())
                 .filter(|_| process.len() == "gf180mcuX".len())
@@ -280,135 +226,5 @@ impl PdkConstants {
             }
         }
         Ok(())
-    }
-}
-
-macro_rules! ihp_layer {
-    ($gds_layer:expr, [$($alg:expr),+ $(,)?], $density:expr, $deviation:expr, $tile_um:expr) => {
-        PdkLayer {
-            gds_layer:         $gds_layer,
-            drawing_datatype:  0,
-            fill_datatype:     22,
-            nofill_datatype:   Some(23),
-            max_depth:         10,
-            algorithms:        vec![$($alg),+],
-            default_density:   $density,
-            default_deviation: $deviation,
-            tile_width_um:     $tile_um,
-            merge_for_density: true,
-            merge_window_um:   None,
-        }
-    };
-    // merge = <window_um>: tiled merge with the given sub-window size.
-    // Use for dense layers with many small structures (Activ, GatPoly, Metal1).
-    ($gds_layer:expr, [$($alg:expr),+ $(,)?], $density:expr, $deviation:expr, $tile_um:expr, merge = $window:expr) => {
-        PdkLayer {
-            merge_window_um:   Some($window),
-            ..ihp_layer!($gds_layer, [$($alg),+], $density, $deviation, $tile_um)
-        }
-    };
-}
-
-// IHP SG13G2
-
-#[rustfmt::skip]
-fn ihp_sg13g2() -> PdkConstants {
-    let mut layers = HashMap::new();
-
-    layers.insert("Activ", ihp_layer!(
-        1, [square_noclip(1.08, 4.63, 1.8, 10.0)],
-        50.0, 5.0, 100.0, merge = 50.0));
-
-    layers.insert("GatPoly", ihp_layer!(
-        5, [overlap(0.7, 5.0, 0.18, 0.8)],
-        30.0, 3.0, 100.0, merge = 50.0));
-
-    layers.insert("Metal1", ihp_layer!(
-        8, [square(1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0, merge = 50.0));
-
-    layers.insert("Metal2", ihp_layer!(
-        10, [track_v(1.0, 5.0, 0.42, 10.0, 0.48, 1.44,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("Metal3", ihp_layer!(
-        30, [track_h(1.0, 5.0, 0.42, 10.0, 0.42, 1.26,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("Metal4", ihp_layer!(
-        50, [track_v(1.0, 5.0, 0.42, 10.0, 0.48, 1.44,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("Metal5", ihp_layer!(
-        67, [track_h(1.0, 5.0, 0.42, 10.0, 0.42, 1.26,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("TopMetal1", ihp_layer!(
-        126, [square(5.0, 10.0, 3.0, 10.0)],
-        40.0, 10.0, 800.0));
-
-    layers.insert("TopMetal2", ihp_layer!(
-        134, [square(5.0, 10.0, 3.0, 10.0)],
-        40.0, 10.0, 800.0));
-
-    PdkConstants {
-        layers, db_unit_um: 0.001, tile_width_um: 800.0,
-        fill_boundary_layer: Some((39, 0)), density_boundary_layer: Some((39, 4)),
-        grid_dbu: 5.0,
-    }
-}
-
-// IHP SG13CMOS5L
-
-#[rustfmt::skip]
-fn ihp_sg13cmos5l() -> PdkConstants {
-    let mut layers = HashMap::new();
-
-    layers.insert("Activ", ihp_layer!(
-        1, [square_noclip(1.08, 4.63, 1.8, 10.0)],
-        50.0, 5.0, 100.0, merge = 50.0));
-
-    layers.insert("GatPoly", ihp_layer!(
-        5, [overlap(0.7, 5.0, 0.18, 0.8)],
-        30.0, 3.0, 100.0, merge = 50.0));
-
-    layers.insert("Metal1", ihp_layer!(
-        8, [square(1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0, merge = 50.0));
-
-    layers.insert("Metal2", ihp_layer!(
-        10, [track_v(1.0, 5.0, 0.42, 10.0, 0.48, 1.44,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("Metal3", ihp_layer!(
-        30, [track_h(1.0, 5.0, 0.42, 10.0, 0.42, 1.26,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("Metal4", ihp_layer!(
-        50, [track_v(1.0, 5.0, 0.42, 10.0, 0.48, 1.44,
-                     &[1.0, 0.6, 0.5, 0.4, 0.3], &[5.0, 4.0, 3.0, 2.0, 1.5, 1.0]),
-             square( 1.0, 5.0, 0.42, 10.0)],
-        50.0, 10.0, 100.0));
-
-    layers.insert("TopMetal1", ihp_layer!(
-        126, [square(5.0, 10.0, 3.0, 10.0)],
-        40.0, 10.0, 800.0));
-
-    PdkConstants {
-        layers, db_unit_um: 0.001, tile_width_um: 800.0,
-        fill_boundary_layer: Some((39, 0)), density_boundary_layer: Some((39, 4)),
-        grid_dbu: 5.0,
     }
 }
