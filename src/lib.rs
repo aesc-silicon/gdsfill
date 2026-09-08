@@ -51,6 +51,7 @@ impl RunContext {
         let pdk = PdkConstants::for_process(process).ok_or_else(|| {
             anyhow!("Unknown process '{}'. Supported: ihp-sg13g2, ihp-sg13cmos5l", process)
         })?;
+        pdk.validate(process)?;
         Ok(Self { process: process.to_owned(), config, pdk })
     }
 }
@@ -818,7 +819,9 @@ pub fn tiled_merge_area(
     let tx1 = tile_rect.max().x;
     let ty1 = tile_rect.max().y;
 
-    let window = window_dbu.unwrap_or((tx1 - tx0).max(ty1 - ty0));
+    let window = window_dbu
+        .filter(|w| *w > 0.0 && w.is_finite())
+        .unwrap_or((tx1 - tx0).max(ty1 - ty0));
     let nx = ((tx1 - tx0) / window).ceil() as usize;
     let ny = ((ty1 - ty0) / window).ceil() as usize;
 
@@ -860,6 +863,81 @@ pub fn tiled_merge_area(
     total
 }
 
+/// Upper bound on the number of tiles in a fill or density grid.
+///
+/// Grids are allocated up front -- 24 bytes per tile for every spatial index,
+/// plus the per-tile bookkeeping vectors -- so an implausible chip boundary
+/// becomes a multi-gigabyte allocation before a single polygon is touched.  At
+/// the smallest tile width any PDK table uses (100 um) this cap corresponds to a
+/// 200 x 200 mm die, orders of magnitude beyond a reticle, so it only ever fires
+/// on bad input.
+pub const MAX_TILES: usize = 4_000_000;
+
+/// Tile-grid dimensions for `bbox`, rejecting grids that cannot be real.
+///
+/// `boundary_area` is the area the boundary layer's shapes actually cover.  A
+/// sane boundary fills most of its own bounding box, so when the two disagree by
+/// orders of magnitude the layer holds a stray shape -- a garbage coordinate on
+/// the boundary layer otherwise surfaces only as an allocation failure hundreds
+/// of megabytes later, which says nothing about the cause.
+pub fn tile_grid_dims(
+    bbox: Rect<f64>,
+    tile_size: f64,
+    boundary: (i16, i16),
+    boundary_area: f64,
+    dbu: f64,
+) -> Result<(usize, usize)> {
+    if !tile_size.is_finite() || tile_size <= 0.0 {
+        return Err(anyhow!("Tile width must be positive, got {} µm", tile_size * dbu));
+    }
+    let (w, h) = (bbox.width(), bbox.height());
+    if !w.is_finite() || !h.is_finite() || w < 0.0 || h < 0.0 {
+        return Err(anyhow!(
+            "Chip boundary layer ({}, {}) has a degenerate bounding box \
+             ({:.3}, {:.3}) .. ({:.3}, {:.3}) µm",
+            boundary.0, boundary.1,
+            bbox.min().x * dbu, bbox.min().y * dbu, bbox.max().x * dbu, bbox.max().y * dbu));
+    }
+
+    // `f64 as usize` saturates instead of overflowing, so check before casting.
+    let (fx, fy) = ((w / tile_size).ceil(), (h / tile_size).ceil());
+    let axis_ok = fx <= MAX_TILES as f64 && fy <= MAX_TILES as f64;
+    let (nx, ny) = ((fx as usize).max(1), (fy as usize).max(1));
+    let tiles = if axis_ok { nx.checked_mul(ny) } else { None };
+
+    match tiles {
+        Some(t) if t <= MAX_TILES => Ok((nx, ny)),
+        _ => {
+            let box_area = w * h;
+            let coverage = if box_area > 0.0 { boundary_area / box_area * 100.0 } else { 0.0 };
+            Err(anyhow!(
+                "Chip boundary layer ({}, {}) spans {:.1} x {:.1} µm, which needs \
+                 {} x {} tiles of {:.1} µm -- far beyond the limit of {} tiles.\n\
+                 Its shapes cover {:.1} µm² of that box ({:.4} %), so the layer very \
+                 likely contains stray shapes; check ({}, {}) for geometry outside the die.",
+                boundary.0, boundary.1, w * dbu, h * dbu,
+                nx, ny, tile_size * dbu, MAX_TILES,
+                boundary_area * dbu * dbu, coverage,
+                boundary.0, boundary.1))
+        }
+    }
+}
+
+/// Allocate an empty tile index of `nx * ny` cells without aborting on OOM.
+///
+/// The default `vec![vec![]; n]` aborts the process when the allocation fails;
+/// `try_reserve` turns that into an error the caller can report.
+pub fn empty_tile_index(nx: usize, ny: usize) -> Result<Vec<Vec<usize>>> {
+    let cells = nx.checked_mul(ny)
+        .ok_or_else(|| anyhow!("Tile grid {} x {} overflows", nx, ny))?;
+    let mut idx: Vec<Vec<usize>> = Vec::new();
+    idx.try_reserve_exact(cells).map_err(|_| anyhow!(
+        "Out of memory allocating a {} x {} tile index ({:.1} GB)",
+        nx, ny, (cells * std::mem::size_of::<Vec<usize>>()) as f64 / 1e9))?;
+    idx.resize_with(cells, Vec::new);
+    Ok(idx)
+}
+
 /// Build a flat spatial index over `polys` for a regular tile grid.
 ///
 /// Returns a `Vec` of length `nx * ny`; entry `iy * nx + ix` holds the
@@ -869,8 +947,8 @@ pub fn build_tile_index(
     x_min: f64, y_min: f64,
     tile_size: f64,
     nx: usize, ny: usize,
-) -> Vec<Vec<usize>> {
-    let mut idx = vec![vec![]; nx * ny];
+) -> Result<Vec<Vec<usize>>> {
+    let mut idx = empty_tile_index(nx, ny)?;
     for (ki, poly) in polys.iter().enumerate() {
         let Some(bbox) = poly.bounding_rect() else { continue };
         let ix0 = (((bbox.min().x - x_min) / tile_size).floor() as isize).clamp(0, nx as isize - 1) as usize;
@@ -883,5 +961,57 @@ pub fn build_tile_index(
             }
         }
     }
-    idx
+    Ok(idx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bbox(w: f64, h: f64) -> Rect<f64> {
+        Rect::new(coord!(x: 0.0, y: 0.0), coord!(x: w, y: h))
+    }
+
+    #[test]
+    fn tile_grid_dims_rounds_up() {
+        // 2264.6 x 2271.6 um at 1 nm/dbu, 100 um tiles.
+        let (nx, ny) = tile_grid_dims(bbox(2_264_600.0, 2_271_600.0), 100_000.0, (39, 0), 5.1e12, 0.001)
+            .expect("a real die must be accepted");
+        assert_eq!((nx, ny), (23, 23));
+    }
+
+    #[test]
+    fn tile_grid_dims_never_returns_an_empty_grid() {
+        let (nx, ny) = tile_grid_dims(bbox(0.0, 0.0), 100_000.0, (39, 0), 0.0, 0.001).unwrap();
+        assert_eq!((nx, ny), (1, 1));
+    }
+
+    #[test]
+    fn tile_grid_dims_rejects_a_stray_boundary_shape() {
+        // A garbage coordinate near i32::MAX on the boundary layer: 21475 x 21475
+        // tiles, which used to be an 11 GB allocation.
+        let err = tile_grid_dims(
+            bbox(2_147_400_200.0, 2_147_400_200.0), 100_000.0, (39, 0), 2.5e11, 0.001,
+        ).expect_err("an implausible grid must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("(39, 0)"), "{msg}");
+        assert!(msg.contains("stray shapes"), "{msg}");
+    }
+
+    #[test]
+    fn tile_grid_dims_rejects_a_non_positive_tile_width() {
+        assert!(tile_grid_dims(bbox(1000.0, 1000.0), 0.0, (39, 0), 1e6, 0.001).is_err());
+    }
+
+    #[test]
+    fn tile_grid_dims_rejects_a_non_finite_bbox() {
+        assert!(tile_grid_dims(bbox(f64::INFINITY, 1000.0), 100.0, (39, 0), 0.0, 0.001).is_err());
+    }
+
+    #[test]
+    fn empty_tile_index_has_one_slot_per_tile() {
+        let idx = empty_tile_index(4, 3).unwrap();
+        assert_eq!(idx.len(), 12);
+        assert!(idx.iter().all(|c| c.is_empty()));
+    }
 }

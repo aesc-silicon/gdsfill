@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use anyhow::{anyhow, Result};
+
 pub mod ihp_sg13;
 
 // Algorithm parameter structs
@@ -195,6 +197,71 @@ impl PdkConstants {
     /// Tile width converted to database units.
     pub fn tile_width_dbu(&self) -> f64 {
         self.tile_width_um / self.db_unit_um
+    }
+
+    /// Check the layer table for values that would produce nonsensical geometry.
+    ///
+    /// Tile widths, track pitches and fill sizes are divisors and loop bounds
+    /// deep inside the fill algorithms, where a zero or negative entry becomes
+    /// an infinite count and then an unbounded allocation.  Catching it here
+    /// costs nothing and names the offending layer.
+    pub fn validate(&self, process: &str) -> Result<()> {
+        fn positive(v: f64) -> bool {
+            v.is_finite() && v > 0.0
+        }
+        let bad = |what: &str, value: f64| -> anyhow::Error {
+            anyhow!("PDK '{}': {} must be positive and finite, got {}", process, what, value)
+        };
+        if !positive(self.db_unit_um) {
+            return Err(bad("database unit", self.db_unit_um));
+        }
+        if !positive(self.tile_width_um) {
+            return Err(bad("tile width", self.tile_width_um));
+        }
+        if !positive(self.grid_dbu) {
+            return Err(bad("manufacturing grid", self.grid_dbu));
+        }
+
+        for (name, layer) in &self.layers {
+            let bad = |what: &str, value: f64| -> anyhow::Error {
+                anyhow!("PDK '{}', layer '{}': {} must be positive and finite, got {}",
+                    process, name, what, value)
+            };
+            if !positive(layer.tile_width_um) {
+                return Err(bad("tile width", layer.tile_width_um));
+            }
+            if let Some(w) = layer.merge_window_um
+                && !positive(w) {
+                    return Err(bad("merge window", w));
+                }
+            if layer.algorithms.is_empty() {
+                return Err(anyhow!("PDK '{}', layer '{}': no fill algorithm", process, name));
+            }
+            for algorithm in &layer.algorithms {
+                let (min_width, max_width) = match algorithm {
+                    FillAlgorithm::Square(p) => (p.min_width, p.max_width),
+                    FillAlgorithm::Overlap(p) => (p.min_width, p.max_width),
+                    FillAlgorithm::Track(p) => {
+                        if !positive(p.gaps) {
+                            return Err(bad("track pitch", p.gaps));
+                        }
+                        if !positive(p.cell_height) {
+                            return Err(bad("cell height", p.cell_height));
+                        }
+                        (p.min_width, p.max_width)
+                    }
+                };
+                if !positive(min_width) {
+                    return Err(bad("minimum fill width", min_width));
+                }
+                if !max_width.is_finite() || max_width < min_width {
+                    return Err(anyhow!(
+                        "PDK '{}', layer '{}': maximum fill width {} is below the minimum {}",
+                        process, name, max_width, min_width));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
