@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -10,6 +11,12 @@ use gdsfill::{density, erase, fill, RunContext};
 #[derive(Parser)]
 #[command(name = "gdsfill", about = "Metal dummy fill for EDA layouts")]
 struct Cli {
+    /// Worker threads to use (default: one per core).  Lowering this trims the
+    /// per-thread working set; most of the peak is the layout geometry itself,
+    /// so expect a modest saving for a large slowdown.
+    #[arg(long, short = 'j', global = true)]
+    jobs: Option<usize>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -86,6 +93,16 @@ fn main() -> anyhow::Result<()> {
     );
 
     let cli = Cli::parse();
+
+    if let Some(jobs) = cli.jobs {
+        if jobs == 0 {
+            anyhow::bail!("--jobs must be at least 1");
+        }
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build_global()
+            .context("Failed to configure the worker thread pool")?;
+    }
 
     match cli.command {
         Commands::Erase { process, config_file, gds_file } => {

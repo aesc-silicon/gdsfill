@@ -14,7 +14,8 @@ use rayon::prelude::*;
 
 use crate::pdk::FillAlgorithm;
 use crate::{
-    build_tile_index, clipped_area, get_target_layers, tiled_merge_area, read_gds, write_gds,
+    build_tile_index, clipped_area, empty_tile_index, get_target_layers, tile_grid_dims,
+    tiled_merge_area, read_gds, write_gds,
     RunContext, LayerMap, DEBUG_KEEPOUT_DT, DEBUG_MERGED_DT
 };
 
@@ -69,6 +70,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         layer_map.remove_contained(layer.gds_layer, layer.drawing_datatype);
     }
 
+    println!("Chip area:    ({:.3}, {:.3}) .. ({:.3}, {:.3}) µm  ({:.1} x {:.1} µm)",
+        bbox.min().x * dbu, bbox.min().y * dbu, bbox.max().x * dbu, bbox.max().y * dbu,
+        bbox.width() * dbu, bbox.height() * dbu);
     println!("Density area: {:.1} µm²", density_area * dbu * dbu);
 
     // Compute the digital core area used by Track fill (PDK-specific).
@@ -96,8 +100,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
 
     'layer: for (name, layer) in &fill_targets {
         let tile_size = layer.tile_width_um / dbu;
-        let nx = ((x_max - x_min) / tile_size).ceil() as usize;
-        let ny = ((y_max - y_min) / tile_size).ceil() as usize;
+        let (nx, ny) = tile_grid_dims(bbox, tile_size, (bl_layer, bl_datatype), density_area, dbu)?;
 
         let layer_config = config.as_ref()
             .and_then(|c| c.layers.as_ref())
@@ -128,8 +131,8 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         let t = Instant::now();
         let drawing_raw = layer_map.polygons(layer.gds_layer, layer.drawing_datatype);
         let fill_raw    = layer_map.polygons(layer.gds_layer, layer.fill_datatype);
-        let drawing_idx = build_tile_index(drawing_raw, x_min, y_min, tile_size, nx, ny);
-        let fill_idx    = build_tile_index(fill_raw,    x_min, y_min, tile_size, nx, ny);
+        let drawing_idx = build_tile_index(drawing_raw, x_min, y_min, tile_size, nx, ny)?;
+        let fill_idx    = build_tile_index(fill_raw,    x_min, y_min, tile_size, nx, ny)?;
         println!("  {:<18} {:>8.2?}  (drawing {}, fill {})",
             "index draw/fill:", t.elapsed(), drawing_raw.len(), fill_raw.len());
 
@@ -165,7 +168,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         let t = Instant::now();
         let keepout_polys_only: Vec<geo::Polygon<f64>> =
             base_keepout.iter().map(|(_, p)| p.clone()).collect();
-        let tile_keepout_idx = build_tile_index(&keepout_polys_only, x_min, y_min, tile_size, nx, ny);
+        let tile_keepout_idx = build_tile_index(&keepout_polys_only, x_min, y_min, tile_size, nx, ny)?;
         let avg_ko = tile_keepout_idx.iter().map(|v| v.len()).sum::<usize>()
             .checked_div(nx * ny)
             .unwrap_or(0);
@@ -175,9 +178,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         // Core polygon tile index for Track fill (empty if no Track algorithm on this layer).
         let has_track_algo = layer.algorithms.iter().any(|a| matches!(a, FillAlgorithm::Track(_)));
         let core_tile_idx: Vec<Vec<usize>> = if has_track_algo && !core_polys_all.is_empty() {
-            build_tile_index(&core_polys_all, x_min, y_min, tile_size, nx, ny)
+            build_tile_index(&core_polys_all, x_min, y_min, tile_size, nx, ny)?
         } else {
-            vec![vec![]; nx * ny]
+            empty_tile_index(nx, ny)?
         };
 
         // For Track fill: anchor the fill grid to the lower-left corner of the digital
@@ -211,7 +214,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         // emits each overlap fill exactly once; cross-tile spacing is still enforced
         // by the halo keepout, so nothing else changes.
         let ref_tile_idx: Vec<Vec<usize>> = if overlap_ref_key.is_some() {
-            let mut idx = vec![vec![]; nx * ny];
+            let mut idx = empty_tile_index(nx, ny)?;
             for (ki, r) in ref_rects_storage.iter().enumerate() {
                 let cx = (r.min().x + r.max().x) / 2.0;
                 let cy = (r.min().y + r.max().y) / 2.0;
@@ -221,7 +224,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
             }
             idx
         } else {
-            vec![vec![]; nx * ny]
+            empty_tile_index(nx, ny)?
         };
 
         // Process all tiles in parallel; each tile is independent (reads only shared refs)
@@ -303,7 +306,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
             }).collect();
             let placed_polys: Vec<geo::Polygon<f64>> =
                 placed_ko.iter().map(|(_, p)| p.clone()).collect();
-            let placed_idx = build_tile_index(&placed_polys, x_min, y_min, tile_size, nx, ny);
+            let placed_idx = build_tile_index(&placed_polys, x_min, y_min, tile_size, nx, ny)?;
 
             let pass: Vec<(Vec<Rect<f64>>, f64)> = coords.par_iter()
                 .map(|&(ix, iy)| {
@@ -396,8 +399,8 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, dryrun: bool, verbose:
         // `target`, thinning the placed rects deterministically.  Removing rects
         // from a valid min-space set only increases spacing, so it stays DRC-clean.
         let window_size = pdk.tile_width_um / dbu;
-        let nwx = (((x_max - x_min) / window_size).ceil() as usize).max(1);
-        let nwy = (((y_max - y_min) / window_size).ceil() as usize).max(1);
+        let (nwx, nwy) =
+            tile_grid_dims(bbox, window_size, (bl_layer, bl_datatype), density_area, dbu)?;
         let win_of = |x: f64, y: f64| -> usize {
             let wx = (((x - x_min) / window_size).floor() as i64).clamp(0, nwx as i64 - 1) as usize;
             let wy = (((y - y_min) / window_size).floor() as i64).clamp(0, nwy as i64 - 1) as usize;

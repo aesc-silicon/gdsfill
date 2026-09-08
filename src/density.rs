@@ -11,7 +11,8 @@ use gds21::{GdsBoundary, GdsElement, GdsPoint};
 use rayon::prelude::*;
 
 use crate::{
-    build_tile_index, clipped_area, get_target_layers, tiled_merge_area, read_gds, write_gds,
+    build_tile_index, clipped_area, get_target_layers, tile_grid_dims, tiled_merge_area,
+    read_gds, write_gds,
     RunContext, LayerMap, DEBUG_MERGED_DT
 };
 
@@ -92,6 +93,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Resu
         layer_map.remove_contained(layer.gds_layer, layer.drawing_datatype);
     }
 
+    println!("Chip area:    ({:.3}, {:.3}) .. ({:.3}, {:.3}) µm  ({:.1} x {:.1} µm)",
+        bbox.min().x * dbu, bbox.min().y * dbu, bbox.max().x * dbu, bbox.max().y * dbu,
+        bbox.width() * dbu, bbox.height() * dbu);
     println!("Density area: {:.1} µm²", density_area * dbu * dbu);
 
     let mut debug_boundaries: Vec<GdsBoundary> = Vec::new();
@@ -100,8 +104,7 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Resu
         println!("\nLayer {} (layer {}):", name, layer.gds_layer);
 
         let tile_size = pdk.tile_width_um / dbu;
-        let nx = ((x_max - x_min) / tile_size).ceil() as usize;
-        let ny = ((y_max - y_min) / tile_size).ceil() as usize;
+        let (nx, ny) = tile_grid_dims(bbox, tile_size, (bl_layer, bl_datatype), density_area, dbu)?;
 
         let drawing = layer_map.polygons(layer.gds_layer, layer.drawing_datatype);
         let fill    = layer_map.polygons(layer.gds_layer, layer.fill_datatype);
@@ -123,9 +126,9 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Resu
         let merge_window_dbu = layer.merge_window_um.map(|w| w / dbu);
         let merge_for_density = layer.merge_for_density;
 
-        let run_tiles = |draw_polys: &[Polygon<f64>]| -> (Vec<TileResult>, f64, f64) {
-            let draw_idx = build_tile_index(draw_polys, x_min, y_min, tile_size, nx, ny);
-            let fill_idx = build_tile_index(fill,       x_min, y_min, tile_size, nx, ny);
+        let run_tiles = |draw_polys: &[Polygon<f64>]| -> Result<(Vec<TileResult>, f64, f64)> {
+            let draw_idx = build_tile_index(draw_polys, x_min, y_min, tile_size, nx, ny)?;
+            let fill_idx = build_tile_index(fill,       x_min, y_min, tile_size, nx, ny)?;
             let coords: Vec<(usize, usize)> = (0..ny)
                 .flat_map(|iy| (0..nx).map(move |ix| (ix, iy)))
                 .collect();
@@ -155,10 +158,10 @@ pub fn run(gds_file: &Path, ctx: RunContext, debug: bool, verbose: bool) -> Resu
             tiles.sort_unstable_by_key(|t| (t.iy, t.ix));
             let total_draw: f64 = tiles.iter().map(|t| t.draw_area).sum();
             let total_fill: f64 = tiles.iter().map(|t| t.fill_area).sum();
-            (tiles, total_draw, total_fill)
+            Ok((tiles, total_draw, total_fill))
         };
 
-        let (tiles, total_draw, total_fill) = run_tiles(drawing);
+        let (tiles, total_draw, total_fill) = run_tiles(drawing)?;
 
         for t in tiles.iter().filter(|_| verbose) {
             let tx0 = x_min + t.ix as f64 * tile_size;
