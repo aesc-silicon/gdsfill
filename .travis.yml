@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 aesc silicon
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Run gdsfill over the real designs in aesc-silicon/reference-designs, one job
+# per PDK, and verify with gdscheck's density suite that fill meets the rules.
+
+language: rust
+rust: stable
+os: linux
+dist: jammy
+cache: cargo
+
+branches:
+  only:
+    - main
+
+env:
+  global:
+    - REFERENCE_DESIGNS=$HOME/reference-designs
+  jobs:
+    - PDK=ihp-sg13g2
+    - PDK=ihp-sg13cmos5l
+    - PDK=gf180mcuD
+
+before_install:
+  - git clone --depth 1 https://github.com/aesc-silicon/reference-designs "$REFERENCE_DESIGNS"
+
+install:
+  - cargo build --release
+  - cargo install --locked gdscheck
+
+script:
+  - ci/run-designs.sh "$PDK"
